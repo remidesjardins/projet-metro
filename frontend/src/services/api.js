@@ -22,5 +22,13 @@ export const api = {
             throw new Error(error.error || 'Erreur lors du calcul de l\'itinéraire')
         }
         return response.json()
+    },
+
+    async testConnexity() {
+        const response = await fetch(`${API_URL}/connexity`)
+        if (!response.ok) {
+            throw new Error('Erreur lors du test de connexité')
+        }
+        return response.json()
     }
 }

@@ -7,8 +7,20 @@ import { RouterView } from 'vue-router'
 </template>
 
 <style>
-body {
+html, body, #app {
+  width: 100vw;
+  height: 100vh;
   margin: 0;
   padding: 0;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "San Francisco", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background-color: rgb(242, 242, 247);
+  color: var(--apple-text);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 </style>

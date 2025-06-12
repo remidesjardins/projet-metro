@@ -12,3 +12,5 @@ dist/
 # OS / Logs
 *.log
 
+.idea
+

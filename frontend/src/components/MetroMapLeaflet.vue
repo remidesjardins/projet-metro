@@ -1,100 +1,82 @@
 <template>
   <div class="map-container">
-    <div class="control-panel">
-      <h2>Recherche d'itinéraire</h2>
-      <div class="search-group">
-        <div class="search-input">
-          <input
-            type="text"
-            v-model="searchStart"
-            @input="searchStation(searchStart)"
-            placeholder="Station de départ"
-            list="stations-list"
-          />
-          <datalist id="stations-list">
-            <option v-for="station in allStations" :key="station.id" :value="station.name">
-              {{ station.name }}
-            </option>
-          </datalist>
-          <div v-if="searchResults.length > 0 && searchStart" class="search-results">
-            <div
-              v-for="station in searchResults"
-              :key="station.id"
-              @click="selectStationFromSearch(station, true)"
-              class="search-result-item"
-            >
-              {{ station.name }}
+    <div class="liquid-glass-panel">
+      <div class="content-wrapper">
+        <div class="search-section">
+          <div class="search-label">From</div>
+          <div class="search-input-wrapper">
+            <div class="station-dot orange"></div>
+            <input
+              type="text"
+              v-model="searchStart"
+              @input="searchStationStart(searchStart)"
+              @focus="isStartFocused = true"
+              @blur="setTimeout(() => isStartFocused = false, 150)"
+              placeholder="Station de départ"
+              class="glass-input"
+            />
+            <div class="chevron-icon"></div>
+            <div v-if="isStartFocused && searchResultsStart.length > 0 && searchStart" class="search-results">
+              <div
+                v-for="station in searchResultsStart"
+                :key="station.id"
+                @mousedown.prevent="selectStationFromSearch(station, true)"
+                class="search-result-item"
+              >
+                {{ station.name }}
+              </div>
             </div>
           </div>
-        </div>
-        <div class="search-input">
-          <input
-            type="text"
-            v-model="searchEnd"
-            @input="searchStation(searchEnd)"
-            placeholder="Station d'arrivée"
-            list="stations-list"
-          />
-          <div v-if="searchResults.length > 0 && searchEnd" class="search-results">
-            <div
-              v-for="station in searchResults"
-              :key="station.id"
-              @click="selectStationFromSearch(station, false)"
-              class="search-result-item"
-            >
-              {{ station.name }}
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="control-group">
-        <button 
-          @click="toggleACPM" 
-          :class="{ active: showACPM }"
-        >
-          {{ showACPM ? 'Masquer ACPM' : 'Afficher ACPM' }}
-        </button>
-        <button 
-          @click="clearPath" 
-          :disabled="!selectedStart || !selectedEnd"
-        >
-          Effacer le trajet
-        </button>
-        <button @click="debugPolylines">
-          Debug Polylines
-        </button>
-      </div>
-      <div v-if="selectedStart && selectedEnd" class="path-info">
-        <h3>Itinéraire</h3>
-        <div class="path-details">
-          <div v-for="(segment, index) in pathDetails" :key="index" class="path-segment">
-            <div class="segment-header" :style="{ backgroundColor: LINE_COLORS[segment.line] }">
-              <span class="line-number">Ligne {{ segment.line }}</span>
-              <span class="segment-duration">{{ formatTime(segment.duration) }}</span>
-            </div>
-            <div class="segment-stations">
-              <div v-for="(station, stationIndex) in segment.stations" 
-                   :key="stationIndex"
-                   class="station-name"
-                   :class="{ 
-                     'transfer': stationIndex > 0 && stationIndex < segment.stations.length - 1,
-                     'correspondance': stationIndex > 0 && stationIndex < segment.stations.length - 1 && 
-                                     (index > 0 || stationIndex > 0)
-                   }">
-                <span class="station-dot" :style="{ backgroundColor: LINE_COLORS[segment.line] }"></span>
-                {{ station }}
-                <span v-if="stationIndex === 0" class="station-type">Départ</span>
-                <span v-else-if="stationIndex === segment.stations.length - 1" class="station-type">Arrivée</span>
-                <span v-else-if="stationIndex > 0 && stationIndex < segment.stations.length - 1" class="station-type">Correspondance</span>
+          
+          <div class="search-label">To</div>
+          <div class="search-input-wrapper">
+            <div class="station-dot purple"></div>
+            <input
+              type="text"
+              v-model="searchEnd"
+              @input="searchStationEnd(searchEnd)"
+              @focus="isEndFocused = true"
+              @blur="setTimeout(() => isEndFocused = false, 150)"
+              placeholder="Station d'arrivée"
+              class="glass-input"
+            />
+            <div class="chevron-icon"></div>
+            <div v-if="isEndFocused && searchResultsEnd.length > 0 && searchEnd" class="search-results">
+              <div
+                v-for="station in searchResultsEnd"
+                :key="station.id"
+                @mousedown.prevent="selectStationFromSearch(station, false)"
+                class="search-result-item"
+              >
+                {{ station.name }}
               </div>
             </div>
           </div>
         </div>
-        <div class="total-duration">
-          Durée totale : {{ formatTime(pathLength) }}
+        
+        <div class="control-actions">
+          <button 
+            @click="toggleACPM"
+            :class="{ 'active': showACPM }"
+            class="acpm-button"
+          >
+            {{ showACPM ? 'Hide ACPM' : 'Display ACPM' }}
+          </button>
+          
+          <button 
+            v-if="selectedStart && selectedEnd"
+            @click="clearPath" 
+            class="clear-button"
+          >
+            Effacer le trajet
+          </button>
+          <button class="acpm-button secondary" @click="handleTestConnexity" style="margin-top:8px;">
+            Tester la connexité
+          </button>
         </div>
       </div>
     </div>
+    
     <l-map
       ref="map"
       v-model:zoom="zoom"
@@ -105,11 +87,12 @@
       :max-zoom="maxZoom"
       :max-bounds="bounds"
       :max-bounds-viscosity="1.0"
+      class="metro-map"
     >
       <l-image-overlay
         url="/metrof_r.png"
         :bounds="bounds"
-        :opacity="0.6"
+        :opacity="0.7"
       />
       <l-marker
         v-for="station in stations"
@@ -124,8 +107,8 @@
         </l-tooltip>
         <l-icon
           :icon-url="getIconUrl(station)"
-          :icon-size="[10, 10]"
-          :icon-anchor="[5, 5]"
+          :icon-size="[12, 12]"
+          :icon-anchor="[6, 6]"
         />
       </l-marker>
       <l-polyline
@@ -142,8 +125,11 @@
         :key="'path-' + index"
         :lat-lngs="segment.path"
         :color="segment.color"
-        :weight="segment.weight || 6"
-        :opacity="segment.opacity || 1.0"
+        :weight="segment.weight"
+        :opacity="segment.opacity"
+        :line-cap="segment.lineCap"
+        :line-join="segment.lineJoin"
+        :class="segment.className"
       />
       <l-polyline
         v-if="debugPath.length > 0"
@@ -153,15 +139,55 @@
         :opacity="1.0"
       />
     </l-map>
+
+    <!-- Modal Connexité -->
+    <div v-if="showConnexityModal" class="connexity-modal-bg" @click.self="closeConnexityModal">
+      <div class="connexity-modal-glass">
+        <button class="close-modal-btn" @click="closeConnexityModal">&times;</button>
+        <h2>Test de connexité</h2>
+        <div v-if="connexityLoading" class="connexity-loading">Vérification en cours...</div>
+        <div v-else-if="connexityError" class="connexity-error">{{ connexityError }}</div>
+        <div v-else-if="connexityResult">
+          <div class="connexity-status" :class="{connected: connexityResult.is_connected, disconnected: !connexityResult.is_connected}">
+            <span v-if="connexityResult.is_connected">Le graphe est <b>connexe</b></span>
+            <span v-else>Le graphe n'est <b>pas connexe</b> </span>
+          </div>
+          <div class="connexity-details">
+            <div>Nombre de composantes : <b>{{ connexityResult.components_count }}</b></div>
+            <div v-if="connexityResult.components && connexityResult.components.length">
+              <div style="margin-top:8px;">Composantes non connexes :</div>
+              <ul>
+                <li v-for="(comp, idx) in connexityResult.components" :key="idx">
+                  {{ comp.join(', ') }}
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, inject } from 'vue'
-import { LMap, LTileLayer, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay } from '@vue-leaflet/vue-leaflet'
+import { LMap, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { api } from '../services/api'
+
+// Fix de l'icône Leaflet
+import { nextTick } from 'vue';
+import iconRetinaUrl from 'leaflet/dist/images/marker-icon-2x.png';
+import iconUrl from 'leaflet/dist/images/marker-icon.png';
+import shadowUrl from 'leaflet/dist/images/marker-shadow.png';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl,
+  iconUrl,
+  shadowUrl,
+});
 
 const stations = ref([])
 const hoveredStation = ref(null)
@@ -175,10 +201,18 @@ const shortestPath = ref([])
 const pathLength = inject('pathLength')
 const searchStart = ref('')
 const searchEnd = ref('')
-const searchResults = ref([])
+const searchResultsStart = ref([])
+const searchResultsEnd = ref([])
+const isStartFocused = ref(false)
+const isEndFocused = ref(false)
 const allStations = ref([])
 const pathDetails = inject('pathDetails')
 const debugPath = ref([])
+const map = ref(null)
+const showConnexityModal = ref(false)
+const connexityResult = ref(null)
+const connexityLoading = ref(false)
+const connexityError = ref(null)
 
 // Configuration de la carte personnalisée
 const crs = L.CRS.Simple
@@ -209,24 +243,24 @@ const X_MAX = 907
 const Y_MIN = 69
 const Y_MAX = 933
 
-// Mapping des couleurs pour les lignes de métro
+// Mapping des couleurs pour les lignes de métro avec saturation augmentée pour meilleur contraste
 const LINE_COLORS = {
-  '1': '#FFCD00',  // Jaune
-  '2': '#003CA6',  // Bleu
-  '3': '#837902',  // Marron
-  '3bis': '#6EC4E8', // Bleu clair
-  '4': '#CF009E',  // Rose
-  '5': '#FF7E2E',  // Orange
-  '6': '#6ECA97',  // Vert clair
-  '7': '#F59FB3',  // Rose clair
-  '7bis': '#82C8E6', // Bleu ciel
-  '8': '#E19BDF',  // Violet clair
-  '9': '#B6BD00',  // Vert olive
-  '10': '#C9910D', // Orange foncé
-  '11': '#704B1C', // Marron clair
-  '12': '#007852', // Vert foncé
-  '13': '#6EC4E8', // Bleu clair
-  '14': '#62259D'  // Violet
+  '1': '#B89B00',  // Jaune foncé
+  '2': '#0064B0',
+  '3': '#9F9825',
+  '3bis': '#98D4E2',
+  '4': '#C902A0',
+  '5': '#F28E42',
+  '6': '#6EC68D',
+  '7': '#B86A7A',  // Rose foncé
+  '7bis': '#84C0D4',
+  '8': '#A07CB3',  // Violet foncé
+  '9': '#8A8A00',  // Vert olive foncé
+  '10': '#B88A00', // Orange foncé
+  '11': '#8D5E2A',
+  '12': '#007E52',
+  '13': '#73C0E9',
+  '14': '#662483'
 }
 
 // Charger les stations depuis l'API
@@ -248,9 +282,6 @@ async function fetchStations() {
           line: line // Ajouter la propriété line pour faciliter l'accès
         };
       });
-    
-    console.log("Stations chargées:", stations.value.length)
-    console.log("Exemple de station:", stations.value[0])
   } catch (error) {
     console.error('Erreur lors du chargement des stations:', error)
   }
@@ -259,47 +290,31 @@ async function fetchStations() {
 // Charger l'ACPM depuis l'API
 async function fetchACPM() {
   try {
-    console.log("Chargement de l'ACPM...")
     const res = await fetch('http://localhost:5050/acpm')
     const data = await res.json()
-    console.log("Données ACPM reçues:", data)
     
     acpmPath.value = data.mst.map(edge => {
-      console.log("Traitement de l'arête:", edge)
-      
       // Utiliser des noms au lieu des IDs
       const fromStation = stations.value.find(s => s.name === edge.from.name)
       const toStation = stations.value.find(s => s.name === edge.to.name)
       
-      console.log("Stations trouvées:", fromStation?.name, toStation?.name)
-      
       if (fromStation && toStation && fromStation.position && toStation.position) {
-        console.log("Coordonnées:", 
-                   "from:", fromStation.position, 
-                   "to:", toStation.position)
-        
         // Déterminer la ligne - utiliser la ligne de la première station
         const line = fromStation.line || '1'
         const color = LINE_COLORS[line] || '#000000'
         
-        console.log(`Ligne: ${line}, Couleur: ${color}`)
-        
         const path = {
           path: [getLatLng(fromStation), getLatLng(toStation)],
           color: color,
-          weight: 6,
-          opacity: 0.9,
+          weight: 5,
+          opacity: 1,
           lineCap: 'round',
           lineJoin: 'round'
         }
-        console.log("Segment créé:", path)
         return path
       }
-      console.warn("Stations non trouvées pour l'arête:", edge)
       return null
     }).filter(path => path !== null)
-    
-    console.log("ACPM tracé avec", acpmPath.value.length, "segments")
   } catch (error) {
     console.error("Erreur lors du chargement de l'ACPM:", error)
     acpmPath.value = []
@@ -311,35 +326,43 @@ async function fetchAllStations() {
   try {
     const res = await api.getStationsList()
     allStations.value = res.stations
-    console.log("Toutes les stations chargées:", allStations.value.length)
   } catch (error) {
     console.error('Erreur lors du chargement des stations:', error)
   }
 }
 
-// Rechercher une station par nom (une seule fois par nom)
-function searchStation(query) {
+function searchStationStart(query) {
   if (!query) {
-    searchResults.value = []
+    searchResultsStart.value = []
     return
   }
-  searchResults.value = allStations.value
-    .filter(station => 
-      station.name.toLowerCase().includes(query.toLowerCase())
-    )
-    .slice(0, 5) // Limiter à 5 résultats
+  searchResultsStart.value = allStations.value
+    .filter(station => station.name.toLowerCase().includes(query.toLowerCase()))
+    .slice(0, 5)
 }
 
-// Sélectionner une station depuis les résultats de recherche
+function searchStationEnd(query) {
+  if (!query) {
+    searchResultsEnd.value = []
+    return
+  }
+  searchResultsEnd.value = allStations.value
+    .filter(station => station.name.toLowerCase().includes(query.toLowerCase()))
+    .slice(0, 5)
+}
+
 function selectStationFromSearch(station, isStart) {
   if (isStart) {
-    selectedStart.value = station.name // Utiliser le nom de la station comme identifiant
+    selectedStart.value = station.name
     searchStart.value = station.name
+    searchResultsStart.value = []
+    isStartFocused.value = false
   } else {
-    selectedEnd.value = station.name // Utiliser le nom de la station comme identifiant
+    selectedEnd.value = station.name
     searchEnd.value = station.name
+    searchResultsEnd.value = []
+    isEndFocused.value = false
   }
-  searchResults.value = []
   if (selectedStart.value && selectedEnd.value) {
     calculatePath()
   }
@@ -362,11 +385,6 @@ function clearPath() {
   shortestPath.value = []
   pathDetails.value = []
   pathLength.value = null
-}
-
-function getStationName(stationId) {
-  const station = stations.value.find(s => s.id === stationId)
-  return station ? station.name : ''
 }
 
 function getLatLng(station) {
@@ -403,11 +421,11 @@ function getLatLng(station) {
 
 function getIconUrl(station) {
   if (selectedStart.value === station.name) {
-    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="green"/></svg>'
+    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="%2334C759" stroke="white" stroke-width="2"/></svg>'
   } else if (selectedEnd.value === station.name) {
-    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="red"/></svg>'
+    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="%23FF3B30" stroke="white" stroke-width="2"/></svg>'
   }
-  return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 8 8"><circle cx="4" cy="4" r="4" fill="black"/></svg>'
+  return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="rgba(0,0,0,0.6)" stroke="white" stroke-width="1.5"/></svg>'
 }
 
 function selectStation(station) {
@@ -433,16 +451,10 @@ async function calculatePath() {
     if (!selectedStart.value || !selectedEnd.value) return
 
     try {
-        // Utiliser directement les noms de stations sélectionnées
-        console.log("Calcul d'itinéraire entre:", selectedStart.value, "et", selectedEnd.value)
-
         const response = await api.calculateItinerary(
             selectedStart.value,
             selectedEnd.value
         )
-
-        console.log("Réponse de l'API:", response)
-        console.log("Durée totale en secondes:", response.total_time)
 
         // Mise à jour des détails du chemin avec regroupement par ligne
         const segments = []
@@ -498,17 +510,16 @@ async function calculatePath() {
                 // Déterminer si c'est un nouveau segment de ligne
                 if (current.line !== currentLine) {
                     currentLine = current.line
-                    
-                    // Créer un nouveau segment pour cette ligne
+                    // Ligne couleur
                     currentPathSegment = {
                         path: [latLngA, latLngB],
                         color: LINE_COLORS[current.line] || '#000000',
-                        weight: 7,
+                        weight: 8,
                         opacity: 1.0,
                         lineCap: 'round',
-                        lineJoin: 'round'
+                        lineJoin: 'round',
+                        className: 'route-main'
                     }
-                    
                     shortestPath.value.push(currentPathSegment)
                 } else {
                     // Continuer le segment existant
@@ -523,8 +534,6 @@ async function calculatePath() {
 
         // Mise à jour de la durée totale
         pathLength.value = response.total_time
-        
-        console.log("Temps total en secondes:", pathLength.value)
 
     } catch (error) {
         console.error('Erreur lors du calcul de l\'itinéraire:', error)
@@ -544,23 +553,12 @@ function formatTime(seconds) {
 }
 
 function debugPolylines() {
-  console.log("Debug polylines")
-  console.log("ACPM paths:", acpmPath.value)
-  console.log("Shortest path:", shortestPath.value)
-  
   // Créer un chemin de test simple
   const center1 = [IMAGE_HEIGHT/2 - 100, IMAGE_WIDTH/2 - 100]
   const center2 = [IMAGE_HEIGHT/2 + 100, IMAGE_WIDTH/2 + 100]
   
   // Chemin de test visible au centre de la carte
   debugPath.value = [center1, center2]
-  
-  console.log("Debug path créé:", debugPath.value)
-  
-  // Affichons aussi les limites de la carte
-  console.log("Bounds de la carte:", bounds)
-  console.log("Center:", center.value)
-  console.log("Zoom:", zoom.value)
   
   // Ajoutons un segment de test dans shortestPath
   shortestPath.value.push({
@@ -571,259 +569,384 @@ function debugPolylines() {
   })
 }
 
+function initializeMap() {
+  nextTick(() => {
+    if (map.value) {
+      map.value.invalidateSize();
+    }
+  });
+}
+
+async function handleTestConnexity() {
+  connexityLoading.value = true
+  connexityError.value = null
+  try {
+    const result = await api.testConnexity()
+    connexityResult.value = result
+    showConnexityModal.value = true
+  } catch (e) {
+    connexityError.value = e.message || 'Erreur inconnue'
+    showConnexityModal.value = true
+  } finally {
+    connexityLoading.value = false
+  }
+}
+
+function closeConnexityModal() {
+  showConnexityModal.value = false
+  connexityResult.value = null
+  connexityError.value = null
+}
+
 onMounted(async () => {
   try {
-    console.log("Initialisation du composant")
-    await fetchAllStations()
-    await fetchStations()
-    console.log("Initialisation terminée")
+    await fetchAllStations();
+    await fetchStations();
+    
+    // Initialiser la carte après le montage du composant
+    initializeMap();
   } catch (error) {
-    console.error("Erreur lors de l'initialisation:", error)
+    console.error("Erreur lors de l'initialisation:", error);
   }
 })
 </script>
 
 <style scoped>
 .map-container {
-  width: 100%;
+  width: 100vw;
   height: 100vh;
-  border: 1px solid #ccc;
-  border-radius: 4px;
   position: fixed;
   top: 0;
   left: 0;
-  z-index: 1;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.liquid-glass-panel {
+  position: absolute;
+  top: var(--spacing-xl);
+  left: var(--spacing-xl);
+  z-index: 1000;
+  width: 400px;
+  pointer-events: auto;
+  border-radius: 40px;
+  background: linear-gradient(135deg, rgba(89, 95, 207, 0.8), rgba(81, 171, 187, 0.8));
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  padding: 2px;
   overflow: hidden;
 }
 
-.control-panel {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  background: white;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  z-index: 1000;
-  min-width: 200px;
-}
-
-.control-panel h2 {
-  margin: 0 0 15px 0;
-  font-size: 1.2em;
-}
-
-.control-group {
+.content-wrapper {
+  background: linear-gradient(145deg, rgba(61, 81, 181, 0.8), rgba(81, 162, 171, 0.8));
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-radius: 38px;
+  padding: var(--spacing-xl);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--spacing-lg);
 }
 
-button {
-  padding: 8px 12px;
-  border: none;
-  border-radius: 4px;
-  background: #4CAF50;
+.search-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.search-label {
+  font-size: 28px;
+  font-weight: 600;
   color: white;
-  cursor: pointer;
-  transition: background 0.3s;
+  margin-bottom: -8px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-button:hover {
-  background: #45a049;
-}
-
-button:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
-}
-
-button.active {
-  background: #2196F3;
-}
-
-.path-info {
-  margin-top: 15px;
-  padding-top: 15px;
-  border-top: 1px solid #eee;
-}
-
-.path-info p {
-  margin: 5px 0;
-  font-size: 0.9em;
-}
-
-:deep(.leaflet-container) {
-  background: transparent;
-}
-
-:deep(.leaflet-control-container) {
-  display: none;
-}
-
-.search-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.search-input-wrapper {
+  position: relative;
+  margin-top: 10px;
   margin-bottom: 15px;
 }
 
-.search-input {
-  position: relative;
-}
-
-.search-input input {
+.glass-input {
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border: none;
+  border-radius: 25px;
+  padding: 20px 50px;
+  font-size: 20px;
   width: 100%;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
-  background-color: white;
+  color: white;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: 
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-.search-input input:focus {
+.glass-input::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.glass-input:focus {
   outline: none;
-  border-color: #4CAF50;
-  box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: 
+    inset 0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.station-dot {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  top: 50%;
+  left: 15px;
+  transform: translateY(-50%);
+  z-index: 2;
+}
+
+.station-dot.orange {
+  background: #FF9C41;
+  box-shadow: 0 0 10px rgba(255, 156, 65, 0.5);
+}
+
+.station-dot.purple {
+  background: #A15CFF;
+  box-shadow: 0 0 10px rgba(161, 92, 255, 0.5);
+}
+
+.chevron-icon {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  top: 50%;
+  right: 15px;
+  transform: translateY(-50%);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M9 5l7 7-7 7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.8;
+}
+
+.control-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+
+.acpm-button {
+  background: linear-gradient(135deg, #4B7FFD, #59D8E9);
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 18px;
+  font-size: 20px;
+  font-weight: 600;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.acpm-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.acpm-button:active {
+  transform: translateY(0);
+  box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+}
+
+.acpm-button.active {
+  background: linear-gradient(135deg, #3A67DB, #4ABFCE);
+}
+
+.clear-button {
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 12px;
+  font-size: 16px;
+  font-weight: 500;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.clear-button:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .search-results {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 8px);
   left: 0;
   right: 0;
-  background: white;
-  border: 1px solid #ccc;
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
   max-height: 200px;
   overflow-y: auto;
   z-index: 1000;
 }
 
 .search-result-item {
-  padding: 8px;
+  padding: 15px 20px;
   cursor: pointer;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  color: #333;
+  font-weight: 500;
+}
+
+.search-result-item:last-child {
+  border-bottom: none;
 }
 
 .search-result-item:hover {
-  background-color: #f0f0f0;
+  background-color: rgba(0, 0, 0, 0.03);
 }
 
-.station-name {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 0;
-  border-bottom: 1px solid #eee;
-  gap: 0.5rem;
-}
-
-.station-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-right: 0.5rem;
-}
-
-.station-type {
-  font-size: 0.8em;
-  color: #666;
-  margin-left: auto;
-  font-style: italic;
-}
-
-.station-name.correspondance {
-  background-color: #f5f5f5;
-  padding-left: 1rem;
-}
-
-.segment-header {
-  padding: 0.75rem 1rem;
-  color: white;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-weight: bold;
-}
-
-.segment-duration {
-  background: rgba(255, 255, 255, 0.2);
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.9em;
-}
-
-.path-details {
+.metro-map {
+  height: 100vh;
+  width: 100vw;
   position: absolute;
-  top: 100px;
-  left: 10px;
-  background-color: white;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  z-index: 1000;
-  max-width: 300px;
-  max-height: 70vh;
-  overflow-y: auto;
+  top: 0;
+  left: 0;
+  z-index: 1;
 }
 
-.path-details h3 {
-  margin-top: 0;
-  margin-bottom: 10px;
+:deep(.leaflet-container) {
+  width: 100vw !important;
+  height: 100vh !important;
+  min-width: 100vw !important;
+  min-height: 100vh !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: rgb(242, 242, 247);
 }
 
-.total-time {
-  font-weight: bold;
-  margin-bottom: 15px;
-  font-size: 1.1em;
+:deep(.leaflet-control-container) {
+  display: none;
 }
 
-.path-segment {
-  margin-bottom: 12px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid #eee;
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .liquid-glass-panel {
+    width: calc(100% - 32px);
+    left: 16px;
+    right: 16px;
+    transform: none;
+  }
 }
 
-.path-segment:last-child {
-  border-bottom: none;
-  margin-bottom: 0;
-  padding-bottom: 0;
+:deep(.route-main) {
+  stroke-opacity: 1 !important;
+  filter: none !important;
 }
 
-.segment-header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 8px;
+.acpm-button.secondary {
+  background: linear-gradient(135deg, #b1b5c9 0%, #7fd8e9 100%);
+  color: #222;
+  font-weight: 600;
+  margin-top: 8px;
+  border: none;
+  border-radius: 30px;
+  padding: 14px;
+  font-size: 18px;
+  width: 100%;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.acpm-button.secondary:hover {
+  background: linear-gradient(135deg, #7fd8e9 0%, #b1b5c9 100%);
 }
 
-.line-indicator {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
+.connexity-modal-bg {
+  position: fixed;
+  z-index: 3000;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(30,40,60,0.25);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
-  font-weight: bold;
-  margin-right: 10px;
 }
-
-.segment-info {
-  flex: 1;
+.connexity-modal-glass {
+  min-width: 320px;
+  max-width: 90vw;
+  background: linear-gradient(135deg, rgba(89, 95, 207, 0.92), rgba(81, 171, 187, 0.92));
+  border-radius: 32px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  padding: 36px 32px 28px 32px;
+  position: relative;
+  color: #fff;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1.5px solid rgba(255,255,255,0.18);
+  text-align: center;
+  animation: fadeIn 0.25s;
 }
-
-.segment-time {
-  font-weight: bold;
-  font-size: 0.9em;
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
 }
-
-.segment-stations {
-  margin-left: 40px;
-  font-size: 0.9em;
-  color: #555;
+.close-modal-btn {
+  position: absolute;
+  top: 16px;
+  right: 22px;
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 2rem;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
 }
-
-.stations-ellipsis {
-  margin: 3px 0;
-  color: #999;
+.close-modal-btn:hover {
+  opacity: 1;
+}
+.connexity-status {
+  font-size: 1.2rem;
+  margin-bottom: 12px;
+  padding: 10px 0;
+  border-radius: 18px;
+  background: rgba(255,255,255,0.10);
+  font-weight: 600;
+}
+.connexity-status.connected {
+  color: #7fffa7;
+}
+.connexity-status.disconnected {
+  color: #ffbaba;
+}
+.connexity-details {
+  font-size: 1rem;
+  margin-top: 8px;
+  color: #fff;
+}
+.connexity-loading {
+  color: #fff;
+  font-size: 1.1rem;
+  margin: 24px 0;
+}
+.connexity-error {
+  color: #ffbaba;
+  font-size: 1.1rem;
+  margin: 24px 0;
 }
 </style> 
