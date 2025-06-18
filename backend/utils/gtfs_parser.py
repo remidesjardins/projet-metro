@@ -14,8 +14,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Lignes de métro parisien (y compris 3bis et 7bis)
-PARIS_METRO_LINES = [str(i) for i in range(1, 15)] + ['3bis', '7bis']
+# Lignes de métro parisien (y compris 3B et 7B)
+PARIS_METRO_LINES = [str(i) for i in range(1, 15)] + ['3B', '7B']
 
 class GTFSMetroParser:
     def __init__(self, gtfs_dir: str):
@@ -43,7 +43,9 @@ class GTFSMetroParser:
             usecols=['route_id', 'route_short_name', 'route_type'],
             low_memory=False
         )
+        logger.info(f"Routes dans GTFS : {self.routes_df['route_short_name'].unique()}")
         self.routes_df = self.routes_df[(self.routes_df['route_type'] == 1) & (self.routes_df['route_short_name'].isin(PARIS_METRO_LINES))]
+        logger.info(f"Routes métro retenues : {self.routes_df['route_short_name'].unique()}")
         logger.info(f"Routes chargées en {time.time() - route_start:.2f}s : {len(self.routes_df)} lignes métro")
         
         # Charger les trips pour les routes de métro
@@ -54,8 +56,9 @@ class GTFSMetroParser:
             usecols=['trip_id', 'route_id'],
             low_memory=False
         )
+        logger.info(f"Nombre total de trips dans GTFS : {len(self.trips_df)}")
         self.trips_df = self.trips_df[self.trips_df['route_id'].isin(self.routes_df['route_id'])]
-        logger.info(f"Trajets chargés en {time.time() - trip_start:.2f}s : {len(self.trips_df)} trajets")
+        logger.info(f"Nombre de trips retenus (métro) : {len(self.trips_df)}")
         
         # Charger les stop_times pour les trips de métro
         logger.info("Chargement des horaires d'arrêts...")
@@ -66,8 +69,9 @@ class GTFSMetroParser:
             low_memory=False,
             quoting=1  # QUOTE_ALL pour gérer les virgules dans les en-têtes
         )
+        logger.info(f"Nombre total de stop_times dans GTFS : {len(self.stop_times_df)}")
         self.stop_times_df = self.stop_times_df[self.stop_times_df['trip_id'].isin(self.trips_df['trip_id'])]
-        logger.info(f"Horaire d'arrêts chargé en {time.time() - stop_time_start:.2f}s : {len(self.stop_times_df)} arrêts")
+        logger.info(f"Nombre de stop_times retenus (métro) : {len(self.stop_times_df)}")
         
         # Charger les stops pour les arrêts utilisés
         logger.info("Chargement des stations...")
@@ -78,8 +82,10 @@ class GTFSMetroParser:
             usecols=['stop_id', 'stop_name', 'stop_lat', 'stop_lon'],
             low_memory=False
         )
+        logger.info(f"Nombre total de stops dans GTFS : {len(self.stops_df)}")
         self.stops_df = self.stops_df[self.stops_df['stop_id'].isin(used_stop_ids)]
-        logger.info(f"Stations chargées en {time.time() - stop_start:.2f}s : {len(self.stops_df)} stations")
+        logger.info(f"Nombre de stops retenus (utilisés dans métro) : {len(self.stops_df)}")
+        logger.info(f"Exemples de stop_name (premiers 20) : {self.stops_df['stop_name'].value_counts().head(20)}")
         
         # FUSIONNER LES STATIONS PAR NOM (stop_name)
         logger.info("Fusion des stations par nom...")
