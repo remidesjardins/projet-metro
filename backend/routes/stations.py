@@ -70,3 +70,53 @@ def get_stations():
     except Exception as e:
         logger.error(f"Erreur lors du traitement de la requête: {str(e)}", exc_info=True)
         return jsonify({'error': 'Erreur interne du serveur'}), 500 
+
+@stations_bp.route('/stations/list', methods=['GET'])
+def get_stations_list():
+    """Retourne la liste des stations uniques avec leurs lignes associées et leurs IDs."""
+    start_time = time.time()
+    logger.info(f"Début du traitement de la requête GET /stations/list")
+    
+    try:
+        logger.info("Chargement des données...")
+        load_start = time.time()
+        graph, positions, stations = load_data()
+        logger.info(f"Données chargées en {time.time() - load_start:.2f} secondes")
+        
+        # Créer un dictionnaire pour stocker les stations et leurs informations
+        stations_dict = {}
+        for station_id, station in stations.items():
+            name = station['name']
+            if name not in stations_dict:
+                stations_dict[name] = {
+                    'lines': set(),
+                    'ids': set()
+                }
+            # Si station['line'] est une liste, on ajoute tous ses éléments
+            if isinstance(station['line'], list):
+                stations_dict[name]['lines'].update(station['line'])
+            else:
+                stations_dict[name]['lines'].add(station['line'])
+            stations_dict[name]['ids'].add(station_id)
+        
+        # Convertir en liste triée avec les lignes et les IDs
+        stations_list = [
+            {
+                'name': name,
+                'lines': sorted(list(info['lines'])),
+                'ids': sorted(list(info['ids']))
+            }
+            for name, info in sorted(stations_dict.items())
+        ]
+        
+        total_time = time.time() - start_time
+        logger.info(f"Traitement terminé en {total_time:.2f} secondes. {len(stations_list)} stations uniques trouvées.")
+        
+        return jsonify({
+            'stations': stations_list,
+            'count': len(stations_list)
+        })
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du traitement de la requête: {str(e)}", exc_info=True)
+        return jsonify({'error': 'Erreur interne du serveur'}), 500 

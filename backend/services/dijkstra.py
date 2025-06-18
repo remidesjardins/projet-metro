@@ -3,6 +3,14 @@ import heapq
 from typing import Dict, List, Tuple, Any
 
 def dijkstra(graph, start, end):
+    # Compatibilité : transformer la liste de tuples en dict si besoin
+    def get_neighbors(node):
+        neighbors = graph[node]
+        if isinstance(neighbors, dict):
+            return neighbors.items()
+        # Si c'est une liste de tuples (neighbor, weight)
+        return neighbors
+
     heap = [(0, start, [start])]
     visited = set()
     while heap:
@@ -12,7 +20,7 @@ def dijkstra(graph, start, end):
         if current in visited:
             continue
         visited.add(current)
-        for neighbor, weight in graph[current].items():
+        for neighbor, weight in get_neighbors(current):
             if neighbor not in visited:
                 heapq.heappush(heap, (dist + weight, neighbor, path + [neighbor]))
     return float('inf'), []
