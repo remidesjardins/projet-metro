@@ -17,7 +17,7 @@ def get_stations():
         if request.method == 'HEAD':
             logger.info("Requête HEAD détectée, retour immédiat")
             return '', 200
-            
+        
         logger.info("Chargement des données...")
         load_start = time.time()
         graph, positions, stations = load_data()
@@ -35,11 +35,16 @@ def get_stations():
                     'ids': [],
                     'position': None
                 }
-            # Si station_data['line'] est une liste, on ajoute tous ses éléments à l'ensemble
-            if isinstance(station_data['line'], list):
-                station_groups[name]['lines'].update(station_data['line'])
+                # Si station_data['line'] est une liste, on ajoute tous ses éléments à l'ensemble
+                if isinstance(station_data['line'], list):
+                    station_groups[name]['lines'].update(station_data['line'])
+                else:
+                    station_groups[name]['lines'].add(station_data['line'])
             else:
-                station_groups[name]['lines'].add(station_data['line'])
+                if isinstance(station_data['line'], list):
+                    station_groups[name]['lines'].update(station_data['line'])
+                else:
+                    station_groups[name]['lines'].add(station_data['line'])
             station_groups[name]['ids'].append(station_id)
             # Prendre la première position trouvée (ou améliorer pour moyenne)
             if not station_groups[name]['position'] and station_id in positions:
@@ -111,11 +116,11 @@ def get_stations_list():
         
         total_time = time.time() - start_time
         logger.info(f"Traitement terminé en {total_time:.2f} secondes. {len(stations_list)} stations uniques trouvées.")
-        
+
         return jsonify({
             'stations': stations_list,
             'count': len(stations_list)
-        })
+        }) 
         
     except Exception as e:
         logger.error(f"Erreur lors du traitement de la requête: {str(e)}", exc_info=True)
