@@ -182,6 +182,7 @@ def load_data() -> Tuple[Dict[str, Dict[str, int]], Dict[str, Tuple[int, int]], 
             stations[station_id] = {
                 'name': station_name,
                 'line': gtfs_lines.get(station_name, '1'),
+                'types': ['metro'],  # Par défaut, toutes les stations sont de type métro
                 'terminus': station_name in gtfs_terminus,
                 'branche': gtfs_branches.get(station_name, 0)
             }
@@ -210,6 +211,7 @@ def load_data() -> Tuple[Dict[str, Dict[str, int]], Dict[str, Tuple[int, int]], 
                 stations[neighbor_id] = {
                     'name': neighbor_name,
                     'line': gtfs_lines.get(neighbor_name, '1'),
+                    'types': ['metro'],  # Par défaut, toutes les stations sont de type métro
                     'terminus': neighbor_name in gtfs_terminus,
                     'branche': gtfs_branches.get(neighbor_name, 0)
                 }
