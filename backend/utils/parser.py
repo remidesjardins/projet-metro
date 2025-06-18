@@ -1,6 +1,7 @@
 import logging
 from typing import Dict, Tuple, Any
 from pathlib import Path
+from .gtfs_parser import parse_gtfs_to_graph
 
 # Configuration du logging
 logging.basicConfig(
@@ -153,36 +154,93 @@ def parse_pospoints_file(file_path: str, stations: Dict[str, Dict]) -> Dict[str,
 
 def load_data() -> Tuple[Dict[str, Dict[str, int]], Dict[str, Tuple[int, int]], Dict[str, Dict[str, Any]]]:
     """
-    Charge les données des fichiers metro.txt et pospoints.txt.
+    Charge les données GTFS et les convertit dans le format attendu par les algorithmes.
     """
-    data_dir = Path(__file__).parent.parent / 'data'
-    metro_file = data_dir / 'metro.txt'
-    pospoints_file = data_dir / 'pospoint.txt'
+    data_dir = Path(__file__).parent.parent / 'data' / 'gtfs'
     
-    # Chargement des données
-    graph, stations = parse_metro_file(str(metro_file))
-    positions = parse_pospoints_file(str(pospoints_file), stations)
+    # Charger le graphe, les positions, les lignes, les terminus et les branches depuis les données GTFS
+    gtfs_graph, gtfs_positions, gtfs_lines, gtfs_terminus, gtfs_branches = parse_gtfs_to_graph(str(data_dir))
     
-    # Vérifications
-    if len(graph) != len(positions):
-        logger.warning(f"Nombre de stations différent entre metro.txt ({len(graph)}) et pospoints.txt ({len(positions)})")
-        logger.warning("Stations sans position :")
-        for station_id in graph:
-            if station_id not in positions:
-                logger.warning(f"- {station_id}: {stations[station_id]['name']}")
+    # Convertir le graphe GTFS dans le format attendu
+    graph = {}
+    stations = {}
+    positions = {}
+    
+    # Créer un ID unique pour chaque station
+    station_id_counter = 0
+    station_name_to_id = {}
+    
+    # Parcourir le graphe GTFS pour créer les structures de données
+    for station_name, neighbors in gtfs_graph.items():
+        # Créer un ID unique pour la station si elle n'existe pas déjà
+        if station_name not in station_name_to_id:
+            station_id = str(station_id_counter).zfill(4)
+            station_id_counter += 1
+            station_name_to_id[station_name] = station_id
+            
+            # Créer l'entrée dans stations
+            stations[station_id] = {
+                'name': station_name,
+                'line': gtfs_lines.get(station_name, '1'),
+                'terminus': station_name in gtfs_terminus,
+                'branche': gtfs_branches.get(station_name, 0)
+            }
+            
+            # Créer l'entrée dans le graphe
+            graph[station_id] = {}
+            
+            # Utiliser les coordonnées GTFS
+            if station_name in gtfs_positions:
+                lon, lat = gtfs_positions[station_name]
+                x = int(lon * 1000)
+                y = int(lat * 1000)
+                positions[station_id] = (x, y)
+            else:
+                positions[station_id] = (0, 0)
+        
+        station_id = station_name_to_id[station_name]
+        
+        # Ajouter les connexions au graphe
+        for neighbor_name, weight in neighbors:
+            if neighbor_name not in station_name_to_id:
+                neighbor_id = str(station_id_counter).zfill(4)
+                station_id_counter += 1
+                station_name_to_id[neighbor_name] = neighbor_id
+                
+                stations[neighbor_id] = {
+                    'name': neighbor_name,
+                    'line': gtfs_lines.get(neighbor_name, '1'),
+                    'terminus': neighbor_name in gtfs_terminus,
+                    'branche': gtfs_branches.get(neighbor_name, 0)
+                }
+                graph[neighbor_id] = {}
+                
+                # Utiliser les coordonnées GTFS
+                if neighbor_name in gtfs_positions:
+                    lon, lat = gtfs_positions[neighbor_name]
+                    x = int(lon * 1000)
+                    y = int(lat * 1000)
+                    positions[neighbor_id] = (x, y)
+                else:
+                    positions[neighbor_id] = (0, 0)
+            
+            neighbor_id = station_name_to_id[neighbor_name]
+            graph[station_id][neighbor_id] = weight
     
     # Logs
     logger.info(f"Chargement terminé :")
     logger.info(f"- Nombre de stations : {len(stations)}")
     logger.info(f"- Nombre de positions : {len(positions)}")
     logger.info(f"- Nombre de connexions : {sum(len(neighbors) for neighbors in graph.values()) // 2}")
+    logger.info(f"- Nombre de stations terminus : {sum(1 for station in stations.values() if station['terminus'])}")
+    logger.info(f"- Nombre de stations avec branche : {sum(1 for station in stations.values() if station['branche'] > 0)}")
     
     return graph, positions, stations
 
 if __name__ == '__main__':
     # Test du chargement des données
     print("\n=== Test de chargement des données ===")
-    graph, positions, stations = load_data() 
+    graph, positions, stations = load_data()
     
     # Affichage d'un exemple de station
     print("\nExemple de station (première station trouvée) :")
@@ -197,6 +255,8 @@ if __name__ == '__main__':
     print(f"Nombre total de stations : {len(stations)}")
     print(f"Nombre total de positions : {len(positions)}")
     print(f"Nombre total de connexions : {sum(len(neighbors) for neighbors in graph.values()) // 2}")
+    print(f"Nombre de stations terminus : {sum(1 for station in stations.values() if station['terminus'])}")
+    print(f"Nombre de stations avec branche : {sum(1 for station in stations.values() if station['branche'] > 0)}")
     
     # Vérification de cohérence
     print("\nVérification de cohérence :")
