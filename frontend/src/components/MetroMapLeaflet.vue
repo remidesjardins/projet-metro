@@ -1,3 +1,4 @@
+```vue
 <template>
   <div class="map-container">
     <div class="liquid-glass-panel">
@@ -27,7 +28,7 @@
               </div>
             </div>
           </div>
-          
+
           <div class="search-label">To</div>
           <div class="search-input-wrapper">
             <div class="station-dot purple"></div>
@@ -53,19 +54,19 @@
             </div>
           </div>
         </div>
-        
+
         <div class="control-actions">
-          <button 
+          <button
             @click="toggleACPM"
             :class="{ 'active': showACPM }"
             class="acpm-button"
           >
             {{ showACPM ? 'Hide ACPM' : 'Display ACPM' }}
           </button>
-          
-          <button 
+
+          <button
             v-if="selectedStart && selectedEnd"
-            @click="clearPath" 
+            @click="clearPath"
             class="clear-button"
           >
             Effacer le trajet
@@ -76,24 +77,23 @@
         </div>
       </div>
     </div>
-    
+
+    <!-- Carte remplaçant l'image par OpenStreetMap -->
     <l-map
       ref="map"
       v-model:zoom="zoom"
       :center="center"
       :use-global-leaflet="false"
-      :crs="crs"
-      :min-zoom="minZoom"
-      :max-zoom="maxZoom"
-      :max-bounds="bounds"
-      :max-bounds-viscosity="1.0"
       class="metro-map"
     >
-      <l-image-overlay
-        url="/metrof_r.png"
-        :bounds="bounds"
-        :opacity="0.7"
+      <!-- Utilisation de OpenStreetMap -->
+      <l-tile-layer
+        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        layer-type="base"
+        name="OpenStreetMap"
       />
+
+      <!-- Les markers et lignes restent affichés -->
       <l-marker
         v-for="station in stations"
         :key="station.id"
@@ -171,7 +171,7 @@
 
 <script setup>
 import { ref, onMounted, inject } from 'vue'
-import { LMap, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay } from '@vue-leaflet/vue-leaflet'
+import { LMap, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay, LTileLayer } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
 import { api } from '../services/api'
@@ -193,8 +193,8 @@ const stations = ref([])
 const hoveredStation = ref(null)
 const selectedStart = ref(null)
 const selectedEnd = ref(null)
-const zoom = ref(-1)
-const center = ref([476, 488])
+const zoom = ref(13)
+const center = ref([48.8566, 2.3522])
 const showACPM = ref(false)
 const acpmPath = ref([])
 const shortestPath = ref([])
@@ -266,17 +266,24 @@ const LINE_COLORS = {
 // Charger les stations depuis l'API
 async function fetchStations() {
   try {
-    const res = await fetch('http://localhost:5050/stations')
+    const res = await fetch('http://localhost:5050/stations', {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      credentials: 'include'
+    })
     const data = await res.json()
-    
+    console.log(data)
+
     // S'assurer que chaque station a une position valide et ajouter la ligne
     stations.value = data.stations.filter(s => s.position && Array.isArray(s.position) && s.position.length === 2)
       .map(station => {
         // Pour la couleur, on prend la première ligne de la station
-        const line = Array.isArray(station.lines) && station.lines.length > 0 
-          ? station.lines[0] 
+        const line = Array.isArray(station.lines) && station.lines.length > 0
+          ? station.lines[0]
           : '1'; // Ligne 1 par défaut
-        
+
         return {
           ...station,
           line: line // Ajouter la propriété line pour faciliter l'accès
@@ -292,17 +299,17 @@ async function fetchACPM() {
   try {
     const res = await fetch('http://localhost:5050/acpm')
     const data = await res.json()
-    
+
     acpmPath.value = data.mst.map(edge => {
       // Utiliser des noms au lieu des IDs
       const fromStation = stations.value.find(s => s.name === edge.from.name)
       const toStation = stations.value.find(s => s.name === edge.to.name)
-      
+
       if (fromStation && toStation && fromStation.position && toStation.position) {
         // Déterminer la ligne - utiliser la ligne de la première station
         const line = fromStation.line || '1'
         const color = LINE_COLORS[line] || '#000000'
-        
+
         const path = {
           path: [getLatLng(fromStation), getLatLng(toStation)],
           color: color,
@@ -390,7 +397,7 @@ function clearPath() {
 function getLatLng(station) {
   // Gérer différents formats de station
   let x, y;
-  
+
   if (station.position) {
     // Format [x, y]
     [x, y] = station.position;
@@ -403,20 +410,10 @@ function getLatLng(station) {
     console.warn("Format de station non reconnu:", station);
     return [0, 0];
   }
-  
-  // Ajustement des coordonnées pour correspondre à la carte
-  const scaleX = IMAGE_WIDTH / (X_MAX - X_MIN);
-  const scaleY = IMAGE_HEIGHT / (Y_MAX - Y_MIN);
-  
-  // Calcul des coordonnées normalisées avec ajustement
-  const normalizedX = (x - X_MIN) * scaleX + PADDING_X/2 + OFFSET_X;
-  const normalizedY = (Y_MAX - y) * scaleY + PADDING_Y/2 + OFFSET_Y;
-  
-  // Ajustement fin pour correspondre exactement à la carte
-  const finalX = normalizedX * 1.02; // Légère expansion horizontale
-  const finalY = normalizedY * 1.02; // Légère expansion verticale
-  
-  return [finalY, finalX];
+
+
+
+  return [x/1000, y/1000];
 }
 
 function getIconUrl(station) {
@@ -491,22 +488,22 @@ async function calculatePath() {
 
         // Remettre à zéro le chemin sur la carte
         shortestPath.value = []
-        
+
         // Regrouper les segments par ligne pour l'affichage
         let currentLine = null
         let currentPathSegment = null
-        
+
         for (let i = 0; i < response.path.length - 1; i++) {
             const current = response.path[i]
             const next = response.path[i + 1]
-            
+
             if (!current || !next) continue
-            
+
             try {
                 // Convertir les coordonnées
                 const latLngA = getLatLng({ x: current.x, y: current.y })
                 const latLngB = getLatLng({ x: next.x, y: next.y })
-                
+
                 // Déterminer si c'est un nouveau segment de ligne
                 if (current.line !== currentLine) {
                     currentLine = current.line
@@ -556,10 +553,10 @@ function debugPolylines() {
   // Créer un chemin de test simple
   const center1 = [IMAGE_HEIGHT/2 - 100, IMAGE_WIDTH/2 - 100]
   const center2 = [IMAGE_HEIGHT/2 + 100, IMAGE_WIDTH/2 + 100]
-  
+
   // Chemin de test visible au centre de la carte
   debugPath.value = [center1, center2]
-  
+
   // Ajoutons un segment de test dans shortestPath
   shortestPath.value.push({
     path: [center1, center2],
@@ -602,7 +599,7 @@ onMounted(async () => {
   try {
     await fetchAllStations();
     await fetchStations();
-    
+
     // Initialiser la carte après le montage du composant
     initializeMap();
   } catch (error) {
@@ -633,7 +630,7 @@ onMounted(async () => {
   background: linear-gradient(135deg, rgba(89, 95, 207, 0.8), rgba(81, 171, 187, 0.8));
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
-  box-shadow: 
+  box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.1),
     inset 0 0 0 1px rgba(255, 255, 255, 0.2);
   padding: 2px;
@@ -683,7 +680,7 @@ onMounted(async () => {
   color: white;
   font-weight: 500;
   transition: all 0.3s ease;
-  box-shadow: 
+  box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.2),
     0 4px 8px rgba(0, 0, 0, 0.1);
 }
@@ -695,7 +692,7 @@ onMounted(async () => {
 .glass-input:focus {
   outline: none;
   background: rgba(255, 255, 255, 0.25);
-  box-shadow: 
+  box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.3),
     0 4px 12px rgba(0, 0, 0, 0.15);
 }
@@ -949,4 +946,4 @@ onMounted(async () => {
   font-size: 1.1rem;
   margin: 24px 0;
 }
-</style> 
+</style>

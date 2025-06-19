@@ -7,45 +7,72 @@ itineraire_bp = Blueprint('itineraire', __name__)
 
 def format_path_details(path: List[str], stations: Dict[str, Dict[str, Any]], positions: Dict[str, Tuple[int, int]]) -> List[Dict[str, Any]]:
     """
-    Formate les détails du chemin pour l'API.
-    
+    Formate les détails du chemin pour l'API en gérant les lignes multiples des stations.
+
     Args:
-        path: Liste des IDs des stations du chemin
-        stations: Dictionnaire des stations avec leurs informations
-        positions: Dictionnaire des positions des stations
-        
+        path: Liste des IDs des stations du chemin.
+        stations: Dictionnaire des stations avec leurs informations.
+        positions: Dictionnaire des positions des stations.
+
     Returns:
-        Liste de dictionnaires contenant les détails de chaque étape
+        Liste de dictionnaires contenant les détails de chaque étape.
     """
     details = []
-    graph, _, _ = load_data()  # Récupérer le graphe pour les temps entre stations
-    
+    graph, _, _ = load_data()  # Récupérer le graphe pour les temps entre stations.
+
+    # Fonction utilitaire pour trouver la meilleure ligne partagée entre deux stations.
+    def find_common_line(station_id1, station_id2, current_line=None):
+        lines1 = stations[station_id1]['line']
+        lines2 = stations[station_id2]['line']
+        common_lines = set(lines1) & set(lines2)
+
+        # Si une ligne courante est définie, favoriser le maintien sur cette ligne si elle est disponible.
+        if current_line and current_line in common_lines:
+            return current_line
+        # Sinon, retourner une ligne commune arbitrairement (ou optimiser ici si nécessaire).
+        return min(common_lines, default=None)  # Retourne None si pas de ligne commune.
+
+    current_line = None  # Ligne courante suivie.
+
     for i, station_id in enumerate(path):
         station_info = stations[station_id]
         position = positions.get(station_id, (0, 0))
+
+        # Définir l'étape courante.
         step = {
             'id': station_id,
             'name': station_info['name'],
-            'line': station_info['line'],
+            'lines': station_info['line'],
             'is_terminus': station_info['terminus'],
             'x': position[0],
-            'y': position[1]
+            'y': position[1],
         }
-        
-        # Ajouter des informations sur le changement de ligne si nécessaire
-        if i > 0:
-            prev_station = stations[path[i-1]]
-            if prev_station['line'] != station_info['line']:
+
+        # Pour éviter tout problème avec la station de départ
+        if i == 0:
+            # Sélectionner la ligne optimale pour la station initiale.
+            current_line = step['lines'][0] if len(step['lines']) == 1 else min(step['lines'])
+            step['line'] = current_line
+        else:
+            prev_station_id = path[i - 1]
+            prev_station = stations[prev_station_id]
+
+            # Trouver la meilleure ligne commune avec la station précédente.
+            optimal_line = find_common_line(prev_station_id, station_id, current_line)
+            step['line'] = optimal_line
+
+            # Ajouter un changement de ligne si nécessaire.
+            if current_line != optimal_line:
                 step['line_change'] = {
-                    'from': prev_station['line'],
-                    'to': station_info['line']
+                    'from': current_line,
+                    'to': optimal_line
                 }
-            
-            # Ajouter le temps entre cette station et la précédente
-            prev_id = path[i-1]
-            if prev_id in graph and station_id in graph[prev_id]:
-                step['time'] = graph[prev_id][station_id]  # Temps en secondes
-        
+                current_line = optimal_line  # Mettre à jour la ligne courante.
+
+            # Ajouter le temps entre la station précédente et celle-ci.
+            if prev_station_id in graph and station_id in graph[prev_station_id]:
+                step['time'] = graph[prev_station_id][station_id]  # Temps en secondes.
+
         details.append(step)
     return details
 
@@ -53,13 +80,13 @@ def format_path_details(path: List[str], stations: Dict[str, Dict[str, Any]], po
 def get_itineraire():
     """
     Route pour calculer l'itinéraire entre deux stations.
-    
+
     Body attendu:
     {
         "start": "Nom de la station de départ",
         "end": "Nom de la station d'arrivée"
     }
-    
+
     Returns:
     {
         "path": [
@@ -94,16 +121,16 @@ def get_itineraire():
             return jsonify({
                 'error': 'Données manquantes. Veuillez fournir "start" et "end"'
             }), 400
-        
+
         start_name = data['start']
         end_name = data['end']
-        
+
         # Calculer l'itinéraire
         path, total_time, start_id, end_id = shortest_path_by_name(start_name, end_name)
-        
+
         # Charger les données des stations pour les détails
         _, positions, stations = load_data()
-        
+
         # Formater la réponse
         response = {
             'path': format_path_details(path, stations, positions),
@@ -123,9 +150,9 @@ def get_itineraire():
                 'y': positions[end_id][1]
             }
         }
-        
+
         return jsonify(response)
-        
+
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
     except Exception as e:
@@ -135,7 +162,7 @@ def get_itineraire():
 def get_stations_list():
     """
     Route pour obtenir la liste de toutes les stations uniques.
-    
+
     Returns:
     {
         "stations": [
@@ -150,7 +177,7 @@ def get_stations_list():
     """
     try:
         _, _, stations = load_data()
-        
+
         # Créer un dictionnaire pour regrouper les stations par nom
         stations_by_name = {}
         for station_id, station_data in stations.items():
@@ -163,7 +190,7 @@ def get_stations_list():
                 }
             stations_by_name[name]['lines'].add(station_data['line'])
             stations_by_name[name]['is_terminus'] |= station_data['terminus']
-        
+
         # Convertir les sets en listes pour la sérialisation JSON
         response = {
             'stations': [
@@ -175,8 +202,8 @@ def get_stations_list():
                 for data in stations_by_name.values()
             ]
         }
-        
+
         return jsonify(response)
-        
+
     except Exception as e:
         return jsonify({'error': f'Erreur serveur: {str(e)}'}), 500

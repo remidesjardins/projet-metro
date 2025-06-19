@@ -8,16 +8,21 @@ from routes.shortest_path import shortest_path_bp
 from routes.itineraire import itineraire_bp
 
 app = Flask(__name__)
-# Configuration CORS plus permissive pour le développement
+
+# Configuration globale des CORS avec Flask-CORS
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"]
+        "origins": [
+            "http://localhost:5173", 
+            "http://127.0.0.1:5173"
+        ],
+        "methods": ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
+        "allow_headers": ["Content-Type", "Authorization", "X-Custom-Header"],
+        "supports_credentials": True  # Si vous utilisez des cookies ou des tokens avec les requêtes
     }
 })
 
-# Enregistrer les blueprints
+# Enregistrement des blueprints
 app.register_blueprint(stations_bp)
 app.register_blueprint(graph_bp)
 app.register_blueprint(connexity_bp)

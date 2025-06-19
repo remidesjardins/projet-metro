@@ -37,14 +37,25 @@ const LINE_COLORS = {
 provide('pathDetails', pathDetails)
 provide('pathLength', pathLength)
 
+// Détecte si la station courante est une correspondance de changement de ligne
+function isInterchange(segmentIndex, stationIndex) {
+  if (
+    segmentIndex < pathDetails.value.length - 1 &&
+    stationIndex === pathDetails.value[segmentIndex].stations.length - 1
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // Fonction pour formater le temps
 function formatTime(seconds) {
   if (!seconds) return '0 min';
-  
+
   // Convertir les secondes en minutes et arrondir
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = Math.round(seconds % 60);
-  
+
   if (minutes === 0) {
     return `${remainingSeconds} sec`;
   } else if (remainingSeconds === 0) {
@@ -57,7 +68,7 @@ function formatTime(seconds) {
 // Fonction pour calculer le nombre total de stations
 function getTotalStations() {
   if (!pathDetails.value || pathDetails.value.length === 0) return 0;
-  
+
   // Count unique stations across all segments
   const allStations = pathDetails.value.flatMap(segment => segment.stations);
   const uniqueStations = [...new Set(allStations)];
@@ -91,7 +102,7 @@ function handleStartStationInput() {
     startStationSuggestions.value = [];
     return;
   }
-  
+
   const searchTerm = startStation.value.toLowerCase();
   startStationSuggestions.value = stations
     .filter(station => station.toLowerCase().includes(searchTerm))
@@ -106,15 +117,15 @@ function selectStartStation(station) {
 async function testConnexity() {
   isLoading.value = true;
   connexityResult.value = null;
-  
+
   try {
     const url = startStation.value
       ? `${apiUrl}/connexity?station=${encodeURIComponent(startStation.value)}`
       : `${apiUrl}/connexity`;
-      
+
     const response = await fetch(url);
     const data = await response.json();
-    
+
     if (response.ok) {
       connexityResult.value = data;
     } else {
@@ -140,7 +151,7 @@ function closeConnexityModal() {
   <main class="app-container">
     <MetroMapLeaflet />
     <ServerStatus />
-    
+
     <div v-if="pathDetails && pathDetails.length > 0" class="liquid-glass-panel fade-in">
       <div class="content-wrapper">
         <div class="path-panel-header">
@@ -150,42 +161,79 @@ function closeConnexityModal() {
             {{ formatTime(pathLength) }}
           </div>
         </div>
-        
+
         <div class="timeline">
-          <div v-for="(segment, index) in pathDetails" :key="index" class="timeline-segment">
+          <div
+            v-for="(segment, index) in pathDetails"
+            :key="index"
+            class="timeline-segment"
+          >
+            <!-- Indicateur de ligne -->
             <div class="line-indicator" :style="{ backgroundColor: LINE_COLORS[segment.line] || '#000000' }">
               {{ segment.line }}
             </div>
+
+            <!-- Contenu du segment -->
             <div class="segment-content">
               <div class="segment-header">
                 <span class="segment-title">Ligne {{ segment.line }}</span>
                 <span class="segment-duration">{{ formatTime(segment.duration) }}</span>
               </div>
-              
-              <div class="segment-stations">
-                <div v-for="(station, stationIndex) in segment.stations" 
-                     :key="stationIndex" 
-                     class="station-item"
-                     :class="{
-                       'station-start': stationIndex === 0,
-                       'station-end': stationIndex === segment.stations.length - 1,
-                       'station-transfer': stationIndex > 0 && stationIndex < segment.stations.length - 1
-                     }">
-                  <span class="station-dot" :style="{ backgroundColor: LINE_COLORS[segment.line] || '#000000' }"></span>
+
+              <div
+                class="segment-stations"
+                :style="{ '--segment-line-color': LINE_COLORS[segment.line] || '#ccc' }"
+              >
+                <div
+                  v-for="(station, stationIndex) in segment.stations"
+                  :key="stationIndex"
+                  class="station-item"
+                  :class="{
+                    'station-start': stationIndex === 0,
+                    'station-end': stationIndex === segment.stations.length - 1,
+                    'station-interchange': isInterchange(index, stationIndex)
+                  }"
+                >
+                  <span
+                    class="station-dot"
+                    :style="{
+                      backgroundColor: isInterchange(index, stationIndex) ? '#fff' : (LINE_COLORS[segment.line] || '#000000'),
+                      borderColor: '#fff',
+                      boxShadow: '0 0 0 2px ' + (LINE_COLORS[segment.line] || '#000')
+                    }"
+                  ></span>
                   <span class="station-name">{{ station }}</span>
                   <span class="station-lines">
-                    <span v-for="line in (stationLinesMap[station] || []).filter(l => l !== segment.line)" :key="line" class="station-line-pill" :style="{ backgroundColor: LINE_COLORS[line] || '#888', color: (line === '1' || line === '9' || line === '14') ? '#222' : '#fff' }">
+                    <span
+                      v-for="line in (stationLinesMap[station] || []).filter(l => l !== segment.line)"
+                      :key="line"
+                      class="station-line-pill"
+                      :style="{ backgroundColor: LINE_COLORS[line] || '#888', color: (line === '1' || line === '9' || line === '14') ? '#222' : '#fff' }"
+                    >
                       {{ line }}
                     </span>
                   </span>
                   <span v-if="stationIndex === 0" class="station-label">Départ</span>
                   <span v-else-if="stationIndex === segment.stations.length - 1" class="station-label">Arrivée</span>
+                  <span
+                    v-else-if="stationLinesMap[station] && stationLinesMap[station].length > 1"
+                    class="station-label transfer-indicator-label"
+                  >
+                    Correspondance
+                  </span>
+                  <span
+                    v-if="isInterchange(index, stationIndex)"
+                    class="interchange-lines"
+                  >
+                    {{ segment.line }} → {{ pathDetails[index + 1]?.line }}
+                  </span>
                 </div>
               </div>
             </div>
+
           </div>
         </div>
-        
+
         <div class="path-summary-footer">
           <div class="path-details-pill">
             <span class="detail-item">
@@ -200,7 +248,7 @@ function closeConnexityModal() {
         </div>
       </div>
     </div>
-    
+
     <div class="app-title centered-pill">
       <h1>Metro Paris</h1>
     </div>
@@ -212,7 +260,7 @@ function closeConnexityModal() {
           <h2>Test de Connexité</h2>
           <button class="close-button" @click="closeConnexityModal">&times;</button>
         </div>
-        
+
         <div class="modal-body">
           <div class="input-group">
             <label for="startStation">Station de départ (optionnel) :</label>
@@ -234,15 +282,15 @@ function closeConnexityModal() {
               </div>
             </div>
           </div>
-          
-          <button 
+
+          <button
             class="test-button"
             @click="testConnexity"
             :disabled="isLoading"
           >
             {{ isLoading ? 'Test en cours...' : 'Tester la connexité' }}
           </button>
-          
+
           <div v-if="connexityResult" class="result-container">
             <div class="result-header">
               <h3>Résumé</h3>
@@ -250,7 +298,7 @@ function closeConnexityModal() {
                 {{ connexityResult.is_connected ? 'Connexe' : 'Non connexe' }}
               </div>
             </div>
-            
+
             <div class="result-details">
               <p v-if="connexityResult.start_station">
                 Test effectué depuis la station : <strong>{{ connexityResult.start_station }}</strong>
@@ -336,7 +384,7 @@ function closeConnexityModal() {
   background: linear-gradient(135deg, rgba(89, 95, 207, 0.8), rgba(81, 171, 187, 0.8));
   backdrop-filter: blur(15px);
   -webkit-backdrop-filter: blur(15px);
-  box-shadow: 
+  box-shadow:
     0 8px 32px rgba(0, 0, 0, 0.1),
     inset 0 0 0 1px rgba(255, 255, 255, 0.2);
   padding: 2px;
@@ -425,8 +473,9 @@ function closeConnexityModal() {
 
 .segment-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   margin-bottom: var(--spacing-sm);
 }
 
@@ -460,7 +509,7 @@ function closeConnexityModal() {
   top: 10px;
   bottom: 10px;
   width: 2px;
-  background-color: rgba(255, 255, 255, 0.3);
+  background-color: var(--segment-line-color);
   z-index: 1;
 }
 
@@ -514,6 +563,12 @@ function closeConnexityModal() {
   color: rgba(255, 255, 255, 0.8);
 }
 
+.transfer-indicator-label {
+  background: #FFD700;
+  color: #222;
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.6);
+}
+
 .path-summary-footer {
   margin-top: var(--spacing-lg);
   border-top: 1px solid rgba(255, 255, 255, 0.2);
@@ -562,7 +617,7 @@ function closeConnexityModal() {
     bottom: 16px;
     max-height: 70vh;
   }
-  
+
   .app-title {
     top: 16px;
     left: 16px;
@@ -725,5 +780,57 @@ function closeConnexityModal() {
   box-shadow: 0 1px 4px rgba(0,0,0,0.10);
   letter-spacing: 0.02em;
   text-align: center;
+}
+
+
+/* Nouveau design pour la correspondance */
+.transfer-box {
+  margin: 16px auto;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  text-align: center;
+  color: white;
+  font-size: 16px;
+  font-weight: 500;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.transfer-line-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.transfer-line {
+  color: white;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 20px;
+  min-width: 36px;
+  text-align: center;
+  font-size: 15px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+
+.transfer-arrow {
+  font-size: 20px;
+}
+
+.transfer-label {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.interchange-lines {
+  font-size: 13px;
+  font-weight: 500;
+  margin-left: 1.5em;
+  color: #fff;
+  opacity: 0.8;
 }
 </style>
