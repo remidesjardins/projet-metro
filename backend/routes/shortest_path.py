@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from services.dijkstra import dijkstra
 from utils.parser import load_data
 from collections import OrderedDict
+import math
 
 shortest_path_bp = Blueprint('shortest_path', __name__)
 
@@ -34,10 +35,80 @@ def get_shortest_path():
             'error': 'No path found between the specified stations'
         }), 404
     
+    # Fonction pour calculer la distance entre deux points GPS (en km)
+    def calculate_distance_km(lat1, lon1, lat2, lon2):
+        """
+        Calcule la distance entre deux points GPS avec la formule de Haversine.
+        Retourne la distance en kilomètres.
+        """
+        if lat1 is None or lon1 is None or lat2 is None or lon2 is None:
+            return 0
+        
+        # Rayon de la Terre en km
+        R = 6371.0
+        
+        # Conversion en radians
+        lat1_rad = math.radians(lat1)
+        lon1_rad = math.radians(lon1)
+        lat2_rad = math.radians(lat2)
+        lon2_rad = math.radians(lon2)
+        
+        # Différences
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+        
+        # Formule de Haversine
+        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+        distance = R * c
+
+        print(f"Distance calculée entre ({lat1}, {lon1}) et ({lat2}, {lon2}): {distance} km")
+        return distance
+    
+    # Fonction pour calculer les émissions carbone
+    def calculate_emissions(path, stations, positions):
+        """Calcule les émissions de CO2 totales du trajet en grammes."""
+        if len(path) < 2:
+            return 0
+        
+        total_emissions = 0
+        # Facteurs d'émission en g CO2/km
+        emission_factors = {
+            'metro': 2.8,
+            'rer': 2.9,
+            'bus': 19.0
+        }
+        
+        for i in range(len(path) - 1):
+            station_id = path[i]
+            next_station_id = path[i + 1]
+            
+            # Récupérer les positions (lat, lon)
+            pos1 = positions.get(station_id)
+            pos2 = positions.get(next_station_id)
+            
+            if pos1 and pos2:
+                # pos1 et pos2 sont des [latitude, longitude]
+                lat1, lon1 = pos1[0]/1000, pos1[1]/1000
+                lat2, lon2 = pos2[0]/1000, pos2[1]/1000
+                
+                # Calculer la distance réelle
+                print(f"Calcul de la distance entre {station_id} et {next_station_id}")
+                distance_km = calculate_distance_km(lat1, lon1, lat2, lon2)
+                
+                # Déterminer le type de transport (metro par défaut)
+                station_type = stations[station_id].get('type', 'metro')
+                emission_factor = emission_factors.get(station_type, 2.8)
+                
+                # Ajouter les émissions pour ce segment
+                total_emissions += distance_km * emission_factor
+        
+        return round(total_emissions, 2)
+
     # Nouvelle fonction utilitaire pour regrouper le chemin par ligne
     def group_path_by_line_with_labels(path, stations, positions):
         """
-        Retourne une liste ordonnée de dictionnaires avec labels explicites et informations détaillées sur les stations :
+        Retourne une liste ordonnée de dictionnaires avec labels explicites et informations détaillées sur les stations
         [
           {
             "Ligne": "7",
@@ -124,9 +195,13 @@ def get_shortest_path():
 
     # Nouveau format groupé par ligne avec labels et informations détaillées
     path_by_line = group_path_by_line_with_labels(path, stations, positions)
+    
+    # Calculer les émissions carbone
+    emissions = calculate_emissions(path, stations, positions)
 
     return jsonify({
         'chemin': path_by_line,
         'duration': dist,
-        'stations_count': len(path)
-    }) 
+        'stations_count': len(path),
+        'emissions': emissions
+    })
