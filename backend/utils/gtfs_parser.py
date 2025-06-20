@@ -205,46 +205,46 @@ class GTFSMetroParser:
                 # Récupérer les arrêts de ce trip
                 if trip_id in self.stop_times_df.index:
                     trip_stops = self.stop_times_df.loc[trip_id].sort_values('stop_sequence')
-                    
+        
                     # Si c'est un DataFrame avec une seule ligne, le convertir en Series
                     if isinstance(trip_stops, pd.Series):
                         trip_stops = pd.DataFrame([trip_stops])
                     
-                    if len(trip_stops) < 2:  # Ignorer les trajets avec moins de 2 arrêts
-                        continue
-                    
+            if len(trip_stops) < 2:  # Ignorer les trajets avec moins de 2 arrêts
+                continue
+                
                     # Traiter les connexions consécutives
-                    for i in range(len(trip_stops) - 1):
-                        current_stop = trip_stops.iloc[i]
-                        next_stop = trip_stops.iloc[i+1]
-                        
-                        a = self.stop_id_to_name[current_stop['stop_id']]
-                        b = self.stop_id_to_name[next_stop['stop_id']]
-                        
-                        if a != b:
-                            # Convertir les horaires en secondes
-                            current_time = self._time_to_seconds(current_stop['departure_time'])
-                            next_time = self._time_to_seconds(next_stop['arrival_time'])
-                            
-                            # Calculer la durée en secondes
-                            duration = next_time - current_time
-                            if duration < 0:  # Gérer le cas où on passe minuit
-                                duration += 24 * 3600
-                            
-                            # Ajouter la connexion dans les deux sens avec la durée réelle
-                            graph[a].add((b, duration))
-                            graph[b].add((a, duration))
-                            
-                            # Ajouter la ligne aux deux stations
-                            lines[a].add(route_name)
-                            lines[b].add(route_name)
+            for i in range(len(trip_stops) - 1):
+                current_stop = trip_stops.iloc[i]
+                next_stop = trip_stops.iloc[i+1]
+                
+                a = self.stop_id_to_name[current_stop['stop_id']]
+                b = self.stop_id_to_name[next_stop['stop_id']]
+                
+                if a != b:
+                    # Convertir les horaires en secondes
+                    current_time = self._time_to_seconds(current_stop['departure_time'])
+                    next_time = self._time_to_seconds(next_stop['arrival_time'])
                     
-                    # Marquer les terminus
-                    if len(trip_stops) > 0:
-                        first_stop = self.stop_id_to_name[trip_stops.iloc[0]['stop_id']]
-                        last_stop = self.stop_id_to_name[trip_stops.iloc[-1]['stop_id']]
-                        terminus.add(first_stop)
-                        terminus.add(last_stop)
+                    # Calculer la durée en secondes
+                    duration = next_time - current_time
+                    if duration < 0:  # Gérer le cas où on passe minuit
+                        duration += 24 * 3600
+                    
+                    # Ajouter la connexion dans les deux sens avec la durée réelle
+                    graph[a].add((b, duration))
+                    graph[b].add((a, duration))
+                            
+                    # Ajouter la ligne aux deux stations
+                    lines[a].add(route_name)
+                    lines[b].add(route_name)
+            
+            # Marquer les terminus
+            if len(trip_stops) > 0:
+                first_stop = self.stop_id_to_name[trip_stops.iloc[0]['stop_id']]
+                last_stop = self.stop_id_to_name[trip_stops.iloc[-1]['stop_id']]
+                terminus.add(first_stop)
+                terminus.add(last_stop)
         
         # Convertir les sets en listes et lignes en listes triées
         logger.info("Finalisation du graphe...")

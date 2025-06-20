@@ -180,7 +180,7 @@ if __name__ == '__main__':
     
     # Vérification de cohérence
     print(f"Toutes les stations ont-elles une position ? : {all(station_id in positions for station_id in stations)}")
-    print(f"Toutes les stations ont-elles des voisins ? : {all(len(neighbors) > 0 for neighbors in graph.values())}")
+    print(f"Toutes les stations ont-elles des voisins ? : {all(len(neighbors) > 0 for neighbors in graph.values())}") 
     
     # Informations sur le cache
     cache_info = DataManager.get_cache_info()

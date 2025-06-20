@@ -23,11 +23,13 @@ const LINE_COLORS = {
   '2': '#0064B0',  // Bleu foncé - ligne 2
   '3': '#9F9825',  // Marron - ligne 3
   '3bis': '#98D4E2',  // Bleu clair - ligne 3bis
+  '3B': '#6EC4E8',    // Bleu - ligne 3B
   '4': '#C902A0',  // Rose foncé - ligne 4
   '5': '#F28E42',  // Orange - ligne 5
   '6': '#6EC68D',  // Vert - ligne 6
   '7': '#FA9EBA',  // Rose - ligne 7
   '7bis': '#84C0D4',  // Bleu ciel - ligne 7bis
+  '7B': '#6ECA97',    // Vert d'eau - ligne 7B
   '8': '#C5A3CA',  // Violet clair - ligne 8
   '9': '#CEC92B',  // Vert olive - ligne 9
   '10': '#E4B327',  // Orange foncé - ligne 10
@@ -52,33 +54,17 @@ function isInterchange(segmentIndex, stationIndex) {
   return false;
 }
 
-// ✅ WATCHER POUR DÉBUGGER
-watch(pathLength, (newValue) => {
-    console.log('=== DEBUG HOMEVIEW pathLength WATCH ===')
-    console.log('HomeView pathLength changé:', newValue)
-    console.log('Duration:', newValue?.duration, 'Type:', typeof newValue?.duration)
-    console.log('Emissions:', newValue?.emissions, 'Type:', typeof newValue?.emissions)
-}, { deep: true })
-
-// ✅ FONCTION formatTime AMÉLIORÉE avec debug
 function formatTime(pathLengthObj) {
-    console.log('=== DEBUG formatTime ===')
-    console.log('Input reçu:', pathLengthObj)
-    console.log('Type input:', typeof pathLengthObj)
-    
+
     const seconds = pathLengthObj?.duration || pathLengthObj || 0;
-    console.log('Seconds calculées:', seconds, 'Type:', typeof seconds)
     
     if (!seconds || isNaN(seconds)) {
-        console.log('Seconds invalides, retour 0 min')
         return '0 min';
     }
 
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = Math.round(seconds % 60);
     
-    console.log('Minutes:', minutes, 'Secondes restantes:', remainingSeconds)
-
     if (minutes === 0) {
         return `${remainingSeconds} sec`;
     } else if (remainingSeconds === 0) {
@@ -261,12 +247,6 @@ function closeConnexityModal() {
                   <span v-if="stationIndex === 0" class="station-label">Départ</span>
                   <span v-else-if="stationIndex === segment.stations.length - 1" class="station-label">Arrivée</span>
                   <span
-                    v-else-if="stationLinesMap[station] && stationLinesMap[station].length > 1"
-                    class="station-label transfer-indicator-label"
-                  >
-                    Correspondance
-                  </span>
-                  <span
                     v-if="isInterchange(index, stationIndex)"
                     class="interchange-lines"
                   >
@@ -380,13 +360,6 @@ function closeConnexityModal() {
           </div>
         </div>
       </div>
-    </div>
-
-    <!-- ✅ DEBUG DANS LE TEMPLATE -->
-    <div class="debug-panel" style="position: fixed; top: 10px; left: 10px; background: black; color: white; padding: 10px; z-index: 9999; font-size: 12px;">
-        <div>pathLength: {{ JSON.stringify(pathLength, null, 2) }}</div>
-        <div>duration: {{ pathLength?.duration }} ({{ typeof pathLength?.duration }})</div>
-        <div>emissions: {{ pathLength?.emissions }} ({{ typeof pathLength?.emissions }})</div>
     </div>
   </main>
 </template>

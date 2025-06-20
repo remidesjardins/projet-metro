@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from utils.parser import load_data
 import logging
 import time
+from collections import defaultdict, deque
 
 logger = logging.getLogger(__name__)
 stations_bp = Blueprint('stations', __name__)
@@ -110,3 +111,108 @@ def get_stations_list():
     except Exception as e:
         logger.error(f"Erreur lors du traitement de la requête: {str(e)}", exc_info=True)
         return jsonify({'error': 'Erreur interne du serveur'}), 500 
+
+@stations_bp.route('/stations/ordered_by_line', methods=['GET'])
+def get_stations_ordered_by_line():
+    """
+    Retourne, pour chaque ligne, un tableau de branches (chaque branche = séquence complète depuis le terminus principal jusqu'au bout de la branche, en passant par la bifurcation).
+    Pour chaque composante connexe du sous-graphe, génère le chemin le plus long entre deux terminus (ou un chemin simple si pas de terminus), sans cycle.
+    """
+    graph, positions, stations = load_data()
+    from collections import defaultdict, deque
+    # Regrouper les stations par ligne
+    line_to_station_ids = defaultdict(list)
+    # Pour chaque ligne, construire le graphe de la ligne
+    line_graphs = defaultdict(lambda: defaultdict(list))
+    for station_id, station in stations.items():
+        lines = station['line'] if isinstance(station['line'], list) else [station['line']]
+        for line in lines:
+            line_to_station_ids[line].append(station_id)
+    # Construire le graphe de chaque ligne
+    for line, ids in line_to_station_ids.items():
+        for station_id in ids:
+            for neighbor_id in graph[station_id]:
+                neighbor_lines = stations[neighbor_id]['line'] if isinstance(stations[neighbor_id]['line'], list) else [stations[neighbor_id]['line']]
+                if line in neighbor_lines:
+                    line_graphs[line][station_id].append(neighbor_id)
+    result = {}
+    for line, g in line_graphs.items():
+        # Trouver toutes les composantes connexes du sous-graphe
+        visited_global = set()
+        branches = []
+        for node in g:
+            if node in visited_global:
+                continue
+            # BFS pour trouver la composante connexe
+            component = set()
+            queue = deque([node])
+            while queue:
+                u = queue.popleft()
+                if u in component:
+                    continue
+                component.add(u)
+                for v in g[u]:
+                    if v not in component:
+                        queue.append(v)
+            visited_global.update(component)
+            # Pour cette composante, trouver les terminus
+            subg = {k: g[k] for k in component}
+            terminus = [sid for sid, neighbors in subg.items() if len(neighbors) == 1]
+            # Si au moins 2 terminus, chercher le chemin le plus long entre eux
+            if len(terminus) >= 2:
+                # Pour chaque couple de terminus, chercher le chemin le plus long
+                max_path = []
+                for i in range(len(terminus)):
+                    for j in range(i+1, len(terminus)):
+                        start, end = terminus[i], terminus[j]
+                        # BFS pour trouver le chemin simple entre start et end
+                        queue2 = deque([(start, [start])])
+                        visited2 = set()
+                        while queue2:
+                            current, path = queue2.popleft()
+                            if current == end:
+                                if len(path) > len(max_path):
+                                    max_path = path
+                                break
+                            visited2.add(current)
+                            for neighbor in subg[current]:
+                                if neighbor not in visited2 and neighbor not in path:
+                                    queue2.append((neighbor, path + [neighbor]))
+                if max_path:
+                    branch = [{
+                        'id': sid,
+                        'name': stations[sid]['name'],
+                        'position': positions.get(sid)
+                    } for sid in max_path]
+                    branches.append(branch)
+            else:
+                # Pas de terminus (cycle ou composante isolée) : DFS pour un chemin couvrant tous les sommets sans repasser
+                def dfs_path(u, visited, path):
+                    visited.add(u)
+                    path.append(u)
+                    if len(visited) == len(subg):
+                        return list(path)
+                    for v in subg[u]:
+                        if v not in visited:
+                            res = dfs_path(v, visited, path)
+                            if res:
+                                return res
+                    path.pop()
+                    visited.remove(u)
+                    return None
+                found = False
+                for start in subg:
+                    visited = set()
+                    path = []
+                    res = dfs_path(start, visited, path)
+                    if res:
+                        branch = [{
+                            'id': sid,
+                            'name': stations[sid]['name'],
+                            'position': positions.get(sid)
+                        } for sid in res]
+                        branches.append(branch)
+                        found = True
+                        break
+        result[line] = branches
+    return jsonify(result) 

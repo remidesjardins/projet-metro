@@ -63,6 +63,23 @@
           >
             {{ showACPM ? 'Hide ACPM' : 'Display ACPM' }}
           </button>
+          <transition name="fade-scale">
+            <div v-if="showACPM && acpmTotalWeight !== null" class="acpm-refined-badge-wrap">
+              <div :class="['acpm-refined-badge', { 'is-animating': acpmAnimating }]">
+                <span class="acpm-refined-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                </span>
+                <div class="acpm-refined-value-wrapper">
+                  <transition-group name="slide-up-num" tag="span">
+                    <span :key="acpmAnimatedWeight" class="acpm-refined-anim-value">{{ formatSecondsToHMS(acpmAnimatedWeight) }}</span>
+                  </transition-group>
+                </div>
+              </div>
+            </div>
+          </transition>
 
           <button
             v-if="selectedStart && selectedEnd"
@@ -73,6 +90,9 @@
           </button>
           <button class="acpm-button secondary" @click="handleTestConnexity" style="margin-top:8px;">
             Tester la connexité
+          </button>
+          <button class="acpm-button secondary" @click="toggleLines" style="margin-top:8px;">
+            {{ showLines ? 'Masquer les lignes' : 'Afficher les lignes' }}
           </button>
         </div>
       </div>
@@ -93,6 +113,19 @@
         name="OpenStreetMap"
       />
 
+      <!-- Tracé des lignes de métro -->
+      <l-polyline
+        v-if="showLines"
+        v-for="(line, idx) in linesPolylines"
+        :key="'line-polyline-' + line.line"
+        :lat-lngs="line.path"
+        :color="line.color"
+        :weight="6"
+        :opacity="0.85"
+        :line-cap="'round'"
+        :line-join="'round'"
+      />
+
       <!-- Les markers et lignes restent affichés -->
       <l-marker
         v-for="station in stations"
@@ -102,13 +135,16 @@
         @mouseout="hoveredStation = null"
         @click="selectStation(station)"
       >
-        <l-tooltip v-if="hoveredStation === station.id">
-          {{ station.name }}
+        <l-tooltip v-if="hoveredStation === station.id" direction="top" :permanent="false" class="station-tooltip-custom">
+          <div class="station-tooltip-title">{{ station.name }}</div>
+          <div class="station-tooltip-lines">
+            <span v-for="line in station.lines" :key="line" class="line-badge" :style="{ backgroundColor: LINE_COLORS[line] || '#1976d2' }">{{ line }}</span>
+          </div>
         </l-tooltip>
         <l-icon
           :icon-url="getIconUrl(station)"
-          :icon-size="[12, 12]"
-          :icon-anchor="[6, 6]"
+          :icon-size="[28, 28]"
+          :icon-anchor="[14, 14]"
         />
       </l-marker>
       <l-polyline
@@ -139,6 +175,14 @@
         :opacity="1.0"
       />
     </l-map>
+
+    <!-- Légende des lignes -->
+    <div class="legend-lines">
+      <div v-for="(color, line) in LINE_COLORS" :key="line" class="legend-line-item">
+        <span class="legend-line-badge" :style="{ backgroundColor: color }">{{ line }}</span>
+        <span class="legend-line-label">Ligne {{ line }}</span>
+      </div>
+    </div>
 
     <!-- Modal Connexité -->
     <div v-if="showConnexityModal" class="connexity-modal-bg" @click.self="closeConnexityModal">
@@ -185,7 +229,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, inject } from 'vue' // ✅ Ajouter inject
+import { ref, onMounted, inject, watch } from 'vue'
 import { LMap, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay, LTileLayer } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -229,6 +273,11 @@ const showConnexityModal = ref(false)
 const connexityResult = ref(null)
 const connexityLoading = ref(false)
 const connexityError = ref(null)
+const showLines = ref(false)
+const linesPolylines = ref([])
+const acpmTotalWeight = ref(null)
+const acpmAnimatedWeight = ref(0)
+const acpmAnimating = ref(false)
 
 // Configuration de la carte personnalisée
 const crs = L.CRS.Simple
@@ -261,22 +310,24 @@ const Y_MAX = 933
 
 // Mapping des couleurs pour les lignes de métro avec saturation augmentée pour meilleur contraste
 const LINE_COLORS = {
-  '1': '#B89B00',  // Jaune foncé
-  '2': '#0064B0',
-  '3': '#9F9825',
-  '3bis': '#98D4E2',
-  '4': '#C902A0',
-  '5': '#F28E42',
-  '6': '#6EC68D',
-  '7': '#B86A7A',  // Rose foncé
-  '7bis': '#84C0D4',
-  '8': '#A07CB3',  // Violet foncé
-  '9': '#8A8A00',  // Vert olive foncé
-  '10': '#B88A00', // Orange foncé
-  '11': '#8D5E2A',
-  '12': '#007E52',
-  '13': '#73C0E9',
-  '14': '#662483'
+  '1': '#FFCE00',  // Jaune - ligne 1
+  '2': '#0064B0',  // Bleu foncé - ligne 2
+  '3': '#9F9825',  // Marron - ligne 3
+  '3bis': '#98D4E2',  // Bleu clair - ligne 3bis
+  '3B': '#6EC4E8',    // Bleu - ligne 3B
+  '4': '#C902A0',  // Rose foncé - ligne 4
+  '5': '#F28E42',  // Orange - ligne 5
+  '6': '#6EC68D',  // Vert - ligne 6
+  '7': '#FA9EBA',  // Rose - ligne 7
+  '7bis': '#84C0D4',  // Bleu ciel - ligne 7bis
+  '7B': '#6ECA97',    // Vert d'eau - ligne 7B
+  '8': '#C5A3CA',  // Violet clair - ligne 8
+  '9': '#CEC92B',  // Vert olive - ligne 9
+  '10': '#E4B327',  // Orange foncé - ligne 10
+  '11': '#8D5E2A',  // Marron clair - ligne 11
+  '12': '#007E52',  // Vert foncé - ligne 12
+  '13': '#73C0E9',  // Bleu clair - ligne 13
+  '14': '#662483'   // Violet - ligne 14
 }
 
 // Charger les stations depuis l'API
@@ -315,7 +366,7 @@ async function fetchACPM() {
   try {
     const res = await fetch('http://localhost:5050/acpm')
     const data = await res.json()
-
+    acpmTotalWeight.value = data.total_weight
     acpmPath.value = data.mst.map(edge => {
       // Utiliser des noms au lieu des IDs
       const fromStation = stations.value.find(s => s.name === edge.from.name)
@@ -341,6 +392,7 @@ async function fetchACPM() {
   } catch (error) {
     console.error("Erreur lors du chargement de l'ACPM:", error)
     acpmPath.value = []
+    acpmTotalWeight.value = null
   }
 }
 
@@ -428,18 +480,33 @@ function getLatLng(station) {
     return [0, 0];
   }
 
-
-
   return [x/1000, y/1000];
 }
 
+function getStationType(station) {
+  // Détecte si la station est une correspondance ou un terminus
+  if (station.lines && station.lines.length > 1) return 'correspondance';
+  if (station.isTerminus || station.terminus) return 'terminus';
+  return 'simple';
+}
+
 function getIconUrl(station) {
-  if (selectedStart.value === station.name) {
-    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="%2334C759" stroke="white" stroke-width="2"/></svg>'
-  } else if (selectedEnd.value === station.name) {
-    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="%23FF3B30" stroke="white" stroke-width="2"/></svg>'
+  const line = Array.isArray(station.lines) && station.lines.length > 0 ? station.lines[0] : '1';
+  const color = LINE_COLORS[line] || '#1976d2';
+  let radius = 7, stroke = 3, glow = '', fill = color, strokeColor = 'white';
+  // Détection du type de station
+  if (station.lines && station.lines.length > 1) {
+    radius = 7; stroke = 3; // même taille que les stations simples
+    fill = '#fff'; // correspondance = point blanc
+    strokeColor = 'black'; // contour noir pour correspondance
+    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='3' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
+  } else if (station.isTerminus || station.terminus) {
+    radius = 12; stroke = 5;
+    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='4' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
   }
-  return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="rgba(0,0,0,0.6)" stroke="white" stroke-width="1.5"/></svg>'
+  // Encodage du SVG, attention au # dans filter
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>${glow}<circle cx='14' cy='14' r='${radius}' fill='${fill}' stroke='${strokeColor}' stroke-width='${stroke}'${glow ? " filter='url(%23glow)'" : ''}/></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
 function selectStation(station) {
@@ -472,18 +539,11 @@ async function calculatePath() {
     try {
         const response = await api.calculateItinerary(startId.value, endId.value)
         
-        console.log('=== DEBUG RESPONSE ===')
-        console.log('Response complète:', response)
-        
-        // ✅ MODIFICATION : Mettre à jour le pathLength injecté
         pathLength.value = {
             duration: response.duration,
             emissions: response.emissions,
             stationsCount: response.stations_count
         }
-        
-        console.log('=== DEBUG APRÈS MISE À JOUR ===')
-        console.log('pathLength.value après injection:', pathLength.value)
         
         // Mise à jour des détails du chemin avec le nouveau format
         const segments = response.chemin.map(ligneSegment => ({
@@ -586,6 +646,68 @@ function closeConnexityModal() {
   connexityResult.value = null
   connexityError.value = null
 }
+
+function toggleLines() {
+  showLines.value = !showLines.value
+  if (showLines.value) {
+    computeLinesPolylines()
+  }
+}
+
+async function computeLinesPolylines() {
+  try {
+    const res = await fetch('http://localhost:5050/stations/ordered_by_line');
+    const data = await res.json();
+    // data: { ligne: [ [branche1], [branche2], ... ] }
+    linesPolylines.value = [];
+    Object.entries(data).forEach(([line, branches]) => {
+      branches.forEach(branch => {
+        linesPolylines.value.push({
+          line,
+          color: LINE_COLORS[line] || '#000',
+          path: branch.map(s => [s.position[0] / 1000, s.position[1] / 1000]),
+        });
+      });
+    });
+  } catch (e) {
+    linesPolylines.value = [];
+    console.error('Erreur lors du chargement des lignes ordonnées:', e);
+  }
+}
+
+function formatSecondsToHMS(seconds) {
+  if (!seconds || isNaN(seconds)) return '0s';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return [
+    h > 0 ? String(h).padStart(2, '0') : null,
+    String(m).padStart(2, '0'),
+    String(s).padStart(2, '0')
+  ].filter(Boolean).join(':');
+}
+
+watch(acpmTotalWeight, (newVal) => {
+  if (typeof newVal === 'number' && newVal > 0) {
+    acpmAnimating.value = true
+    let start = 0
+    const duration = 1200 // ms
+    const startTime = performance.now()
+    function animate(now) {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      acpmAnimatedWeight.value = Math.floor(progress * newVal)
+      if (progress < 1) {
+        requestAnimationFrame(animate)
+      } else {
+        acpmAnimatedWeight.value = newVal
+        // End animation class after a short delay
+        setTimeout(() => acpmAnimating.value = false, 600)
+      }
+    }
+    requestAnimationFrame(animate)
+  }
+})
 
 onMounted(async () => {
   try {
@@ -978,5 +1100,105 @@ onMounted(async () => {
 
 .stations-count {
   color: #FF9800;
+}
+
+.station-tooltip-custom {
+  background: rgba(255,255,255,0.95);
+  color: #222;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 15px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  min-width: 90px;
+  text-align: center;
+}
+.station-tooltip-title {
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+.station-tooltip-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+}
+.line-badge {
+  display: inline-block;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 2px 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  border: 1.5px solid #fff;
+}
+.legend-lines {
+  display: none;
+}
+.acpm-refined-badge-wrap {
+  margin-top: 16px;
+}
+.acpm-refined-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(242, 245, 248, 0.65);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-radius: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    0 8px 24px rgba(0, 0, 0, 0.05);
+  padding: 8px 20px 8px 12px;
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.acpm-refined-badge.is-animating {
+  transform: scale(1.03);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 1),
+    0 6px 16px rgba(45, 140, 245, 0.1),
+    0 12px 32px rgba(45, 140, 245, 0.15);
+}
+.acpm-refined-icon {
+  display: flex;
+  align-items: center;
+  color: #005bb5;
+  opacity: 0.8;
+}
+.acpm-refined-value-wrapper {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: #003c7a;
+  position: relative;
+  height: 1.4em;
+  line-height: 1.4em;
+  overflow: hidden;
+}
+.slide-up-num-enter-active, .slide-up-num-leave-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: absolute;
+}
+.slide-up-num-enter-from {
+  opacity: 0.5;
+  transform: translateY(100%);
+}
+.slide-up-num-leave-to {
+  opacity: 0.5;
+  transform: translateY(-100%);
+}
+.acpm-refined-anim-value {
+  display: inline-block;
+}
+.fade-scale-enter-active, .fade-scale-leave-active {
+  transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.fade-scale-enter-from, .fade-scale-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
 }
 </style>
