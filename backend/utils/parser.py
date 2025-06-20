@@ -229,23 +229,13 @@ def load_data() -> Tuple[Dict[str, Dict[str, int]], Dict[str, Tuple[int, int]], 
             neighbor_id = station_name_to_id[neighbor_name]
             graph[station_id][neighbor_id] = weight
     
-    # Logs
-    logger.info(f"Chargement terminé :")
-    logger.info(f"- Nombre de stations : {len(stations)}")
-    logger.info(f"- Nombre de positions : {len(positions)}")
-    logger.info(f"- Nombre de connexions : {sum(len(neighbors) for neighbors in graph.values()) // 2}")
-    logger.info(f"- Nombre de stations terminus : {sum(1 for station in stations.values() if station['terminus'])}")
-    logger.info(f"- Nombre de stations avec branche : {sum(1 for station in stations.values() if station['branche'] > 0)}")
-    
     return graph, positions, stations
 
 if __name__ == '__main__':
     # Test du chargement des données
-    print("\n=== Test de chargement des données ===")
     graph, positions, stations = load_data()
     
     # Affichage d'un exemple de station
-    print("\nExemple de station (première station trouvée) :")
     first_station_id = next(iter(stations))
     print(f"ID: {first_station_id}")
     print(f"Données: {stations[first_station_id]}")
@@ -253,7 +243,6 @@ if __name__ == '__main__':
     print(f"Voisins: {graph[first_station_id]}")
     
     # Statistiques générales
-    print("\nStatistiques générales :")
     print(f"Nombre total de stations : {len(stations)}")
     print(f"Nombre total de positions : {len(positions)}")
     print(f"Nombre total de connexions : {sum(len(neighbors) for neighbors in graph.values()) // 2}")
@@ -261,6 +250,5 @@ if __name__ == '__main__':
     print(f"Nombre de stations avec branche : {sum(1 for station in stations.values() if station['branche'] > 0)}")
     
     # Vérification de cohérence
-    print("\nVérification de cohérence :")
     print(f"Toutes les stations ont-elles une position ? : {all(station_id in positions for station_id in stations)}")
     print(f"Toutes les stations ont-elles des voisins ? : {all(len(neighbors) > 0 for neighbors in graph.values())}") 

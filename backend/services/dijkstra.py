@@ -95,10 +95,9 @@ def main():
     # Exemple : plus court chemin entre Abbesses (0000) et Bastille (0016)
     start_id = '0000'  # Abbesses
     end_id = '0016'    # Bastille
-    print(f"Calcul du plus court chemin entre {stations[start_id]['name']} et {stations[end_id]['name']}...")
     dist, path = dijkstra(graph, start_id, end_id)
     if path:
-        print(f"\nChemin trouvé :\n{print_path(path, stations)}")
+        print(f"Chemin trouvé : {print_path(path, stations)}")
         print(f"Durée totale : {dist} secondes (soit {dist/60:.1f} minutes)")
     else:
         print("Aucun chemin trouvé.")

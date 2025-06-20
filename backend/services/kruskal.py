@@ -44,12 +44,9 @@ def kruskal_mst():
             total_weight += weight
             if len(mst) == len(graph) - 1:
                 break
-    print("\n=== Arbre couvrant de poids minimal (Kruskal) ===")
-    for s1, s2, w in mst:
-        print(f"{stations[s1]['name']} <-> {stations[s2]['name']} : {w}")
-    print(f"\nPoids total de l'arbre couvrant : {total_weight}")
-    print(f"Nombre d'arêtes dans l'ACPM : {len(mst)}")
-    print(f"Nombre de sommets : {len(graph)}")
+    return mst, total_weight
 
 if __name__ == "__main__":
-    kruskal_mst()
+    mst, total_weight = kruskal_mst()
+    print(f"Poids total de l'arbre couvrant : {total_weight}")
+    print(f"Nombre d'arêtes dans l'ACPM : {len(mst)}")

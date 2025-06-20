@@ -112,23 +112,10 @@ def test_connexite():
     # Vérifier la connexité
     is_connected = checker.is_connected()
     
-    # Afficher les résultats
-    print("\n=== Test de connexité du graphe du métro ===")
-    print(f"Le graphe est {'connexe' if is_connected else 'non connexe'}")
-    
-    if not is_connected:
-        unreachable = checker.get_unreachable_stations()
-        print(f"\nStations non accessibles ({len(unreachable)}):")
-        for station_id in unreachable:
-            station_name = checker.stations[station_id]['name']
-            print(f"- {station_id}: {station_name}")
-    
-    # Statistiques
-    print(f"\nStatistiques:")
-    print(f"- Nombre total de stations: {len(checker.graph)}")
-    print(f"- Nombre de stations visitées: {len(checker.visited)}")
-    if not is_connected:
-        print(f"- Nombre de stations non accessibles: {len(unreachable)}")
+    return is_connected, checker.get_unreachable_stations()
 
 if __name__ == "__main__":
-    test_connexite()
+    is_connected, unreachable = test_connexite()
+    print(f"Le graphe est {'connexe' if is_connected else 'non connexe'}")
+    if not is_connected:
+        print(f"Stations non accessibles: {len(unreachable)}")

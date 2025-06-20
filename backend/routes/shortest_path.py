@@ -62,7 +62,6 @@ def get_shortest_path():
         c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
         distance = R * c
 
-        print(f"Distance calculée entre ({lat1}, {lon1}) et ({lat2}, {lon2}): {distance} km")
         return distance
     
     # Fonction pour calculer les émissions carbone
@@ -93,7 +92,6 @@ def get_shortest_path():
                 lat2, lon2 = pos2[0]/1000, pos2[1]/1000
                 
                 # Calculer la distance réelle
-                print(f"Calcul de la distance entre {station_id} et {next_station_id}")
                 distance_km = calculate_distance_km(lat1, lon1, lat2, lon2)
                 
                 # Déterminer le type de transport (metro par défaut)

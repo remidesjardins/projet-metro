@@ -10,21 +10,14 @@ stations_bp = Blueprint('stations', __name__)
 def get_stations():
     """Retourne la liste des stations avec leurs coordonnées, groupées par nom."""
     start_time = time.time()
-    logger.info(f"Début du traitement de la requête {request.method} /stations")
     
     try:
         # Pour les requêtes HEAD, on retourne juste un statut 200
         if request.method == 'HEAD':
-            logger.info("Requête HEAD détectée, retour immédiat")
             return '', 200
         
-        logger.info("Chargement des données...")
-        load_start = time.time()
         graph, positions, stations = load_data()
-        logger.info(f"Données chargées en {time.time() - load_start:.2f} secondes")
         
-        logger.info("Groupement des stations par nom...")
-        group_start = time.time()
         station_groups = {}
         for station_id, station_data in stations.items():
             name = station_data['name']
@@ -49,11 +42,8 @@ def get_stations():
             # Prendre la première position trouvée (ou améliorer pour moyenne)
             if not station_groups[name]['position'] and station_id in positions:
                 station_groups[name]['position'] = positions[station_id]
-        logger.info(f"Groupement terminé en {time.time() - group_start:.2f} secondes")
 
         # Formater la liste finale
-        logger.info("Formatage de la réponse...")
-        format_start = time.time()
         stations_list = []
         for group in station_groups.values():
             stations_list.append({
@@ -62,10 +52,9 @@ def get_stations():
                 'ids': group['ids'],
                 'position': group['position']
             })
-        logger.info(f"Formatage terminé en {time.time() - format_start:.2f} secondes")
 
         total_time = time.time() - start_time
-        logger.info(f"Traitement terminé en {total_time:.2f} secondes. {len(stations_list)} stations groupées.")
+        logger.info(f"GET /stations - {len(stations_list)} stations groupées en {total_time:.2f}s")
         
         return jsonify({
             'stations': stations_list,
@@ -80,13 +69,9 @@ def get_stations():
 def get_stations_list():
     """Retourne la liste des stations uniques avec leurs lignes associées et leurs IDs."""
     start_time = time.time()
-    logger.info(f"Début du traitement de la requête GET /stations/list")
     
     try:
-        logger.info("Chargement des données...")
-        load_start = time.time()
         graph, positions, stations = load_data()
-        logger.info(f"Données chargées en {time.time() - load_start:.2f} secondes")
         
         # Créer un dictionnaire pour stocker les stations et leurs informations
         stations_dict = {}
@@ -115,7 +100,7 @@ def get_stations_list():
         ]
         
         total_time = time.time() - start_time
-        logger.info(f"Traitement terminé en {total_time:.2f} secondes. {len(stations_list)} stations uniques trouvées.")
+        logger.info(f"GET /stations/list - {len(stations_list)} stations uniques en {total_time:.2f}s")
 
         return jsonify({
             'stations': stations_list,
