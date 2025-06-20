@@ -2,6 +2,7 @@ import logging
 from typing import Dict, Tuple, Any
 from pathlib import Path
 from .gtfs_parser import parse_gtfs_to_graph
+from .data_manager import DataManager
 
 # Configuration du logging
 logging.basicConfig(
@@ -154,82 +155,10 @@ def parse_pospoints_file(file_path: str, stations: Dict[str, Dict]) -> Dict[str,
 
 def load_data() -> Tuple[Dict[str, Dict[str, int]], Dict[str, Tuple[int, int]], Dict[str, Dict[str, Any]]]:
     """
-    Charge les données GTFS et les convertit dans le format attendu par les algorithmes.
+    Charge les données du métro en utilisant le DataManager pour optimiser les performances.
+    Les données sont mises en cache et rechargées seulement si nécessaire.
     """
-    data_dir = Path(__file__).parent.parent / 'data' / 'gtfs'
-    
-    # Charger le graphe, les positions, les lignes, les terminus et les branches depuis les données GTFS
-    gtfs_graph, gtfs_positions, gtfs_lines, gtfs_terminus, gtfs_branches = parse_gtfs_to_graph(str(data_dir))
-    
-    # Convertir le graphe GTFS dans le format attendu
-    graph = {}
-    stations = {}
-    positions = {}
-    
-    # Créer un ID unique pour chaque station
-    station_id_counter = 0
-    station_name_to_id = {}
-    
-    # Parcourir le graphe GTFS pour créer les structures de données
-    for station_name, neighbors in gtfs_graph.items():
-        # Créer un ID unique pour la station si elle n'existe pas déjà
-        if station_name not in station_name_to_id:
-            station_id = str(station_id_counter).zfill(4)
-            station_id_counter += 1
-            station_name_to_id[station_name] = station_id
-            
-            # Créer l'entrée dans stations
-            stations[station_id] = {
-                'name': station_name,
-                'line': gtfs_lines.get(station_name, '1'),
-                'types': ['metro'],  # Par défaut, toutes les stations sont de type métro
-                'terminus': station_name in gtfs_terminus,
-                'branche': gtfs_branches.get(station_name, 0)
-            }
-            
-            # Créer l'entrée dans le graphe
-            graph[station_id] = {}
-            
-            # Utiliser les coordonnées GTFS
-            if station_name in gtfs_positions:
-                lon, lat = gtfs_positions[station_name]
-                x = int(lon * 1000)
-                y = int(lat * 1000)
-                positions[station_id] = (x, y)
-            else:
-                positions[station_id] = (0, 0)
-        
-        station_id = station_name_to_id[station_name]
-        
-        # Ajouter les connexions au graphe
-        for neighbor_name, weight in neighbors:
-            if neighbor_name not in station_name_to_id:
-                neighbor_id = str(station_id_counter).zfill(4)
-                station_id_counter += 1
-                station_name_to_id[neighbor_name] = neighbor_id
-                
-                stations[neighbor_id] = {
-                    'name': neighbor_name,
-                    'line': gtfs_lines.get(neighbor_name, '1'),
-                    'types': ['metro'],  # Par défaut, toutes les stations sont de type métro
-                    'terminus': neighbor_name in gtfs_terminus,
-                    'branche': gtfs_branches.get(neighbor_name, 0)
-                }
-                graph[neighbor_id] = {}
-                
-                # Utiliser les coordonnées GTFS
-                if neighbor_name in gtfs_positions:
-                    lon, lat = gtfs_positions[neighbor_name]
-                    x = int(lon * 1000)
-                    y = int(lat * 1000)
-                    positions[neighbor_id] = (x, y)
-                else:
-                    positions[neighbor_id] = (0, 0)
-            
-            neighbor_id = station_name_to_id[neighbor_name]
-            graph[station_id][neighbor_id] = weight
-    
-    return graph, positions, stations
+    return DataManager.get_data()
 
 if __name__ == '__main__':
     # Test du chargement des données
@@ -251,4 +180,13 @@ if __name__ == '__main__':
     
     # Vérification de cohérence
     print(f"Toutes les stations ont-elles une position ? : {all(station_id in positions for station_id in stations)}")
-    print(f"Toutes les stations ont-elles des voisins ? : {all(len(neighbors) > 0 for neighbors in graph.values())}") 
+    print(f"Toutes les stations ont-elles des voisins ? : {all(len(neighbors) > 0 for neighbors in graph.values())}")
+    
+    # Informations sur le cache
+    cache_info = DataManager.get_cache_info()
+    print(f"\nInformations sur le cache:")
+    print(f"Cache chargé: {cache_info.get('cache_loaded', False)}")
+    print(f"Données en mémoire: {cache_info.get('data_in_memory', False)}")
+    print(f"Fichier de cache existe: {cache_info.get('cache_file_exists', False)}")
+    if 'cache_size_mb' in cache_info:
+        print(f"Taille du cache: {cache_info['cache_size_mb']:.2f} MB") 

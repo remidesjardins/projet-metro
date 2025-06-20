@@ -6,6 +6,7 @@ from routes.connexity import connexity_bp
 from routes.acpm import acpm_bp
 from routes.shortest_path import shortest_path_bp
 from routes.itineraire import itineraire_bp
+from routes.cache import cache_bp
 
 app = Flask(__name__)
 
@@ -29,6 +30,7 @@ app.register_blueprint(connexity_bp)
 app.register_blueprint(acpm_bp)
 app.register_blueprint(shortest_path_bp)
 app.register_blueprint(itineraire_bp)
+app.register_blueprint(cache_bp)
 
 @app.route('/')
 def index():
@@ -43,7 +45,11 @@ def index():
             'GET /acpm': 'Arbre couvrant de poids minimal (Kruskal)',
             'POST /shortest-path': 'Plus court chemin entre deux stations',
             'POST /itineraire': 'Calcul d\'itinéraire entre deux stations',
-            'GET /stations/list': 'Liste de toutes les stations uniques'
+            'GET /stations/list': 'Liste de toutes les stations uniques',
+            'GET /cache/info': 'Informations sur l\'état du cache',
+            'POST /cache/clear': 'Effacer le cache',
+            'POST /cache/reload': 'Recharger les données depuis GTFS',
+            'GET /performance/test': 'Test de performance'
         }
     }
 
