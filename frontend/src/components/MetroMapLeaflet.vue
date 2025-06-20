@@ -63,6 +63,23 @@
           >
             {{ showACPM ? 'Hide ACPM' : 'Display ACPM' }}
           </button>
+          <transition name="fade-scale">
+            <div v-if="showACPM && acpmTotalWeight !== null" class="acpm-refined-badge-wrap">
+              <div :class="['acpm-refined-badge', { 'is-animating': acpmAnimating }]">
+                <span class="acpm-refined-icon">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                  </svg>
+                </span>
+                <div class="acpm-refined-value-wrapper">
+                  <transition-group name="slide-up-num" tag="span">
+                    <span :key="acpmAnimatedWeight" class="acpm-refined-anim-value">{{ formatSecondsToHMS(acpmAnimatedWeight) }}</span>
+                  </transition-group>
+                </div>
+              </div>
+            </div>
+          </transition>
 
           <button
             v-if="selectedStart && selectedEnd"
@@ -197,7 +214,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, inject } from 'vue'
+import { ref, onMounted, inject, watch } from 'vue'
 import { LMap, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay, LTileLayer } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -242,6 +259,9 @@ const connexityLoading = ref(false)
 const connexityError = ref(null)
 const showLines = ref(false)
 const linesPolylines = ref([])
+const acpmTotalWeight = ref(null)
+const acpmAnimatedWeight = ref(0)
+const acpmAnimating = ref(false)
 
 // Configuration de la carte personnalisée
 const crs = L.CRS.Simple
@@ -278,11 +298,13 @@ const LINE_COLORS = {
   '2': '#0064B0',  // Bleu foncé - ligne 2
   '3': '#9F9825',  // Marron - ligne 3
   '3bis': '#98D4E2',  // Bleu clair - ligne 3bis
+  '3B': '#6EC4E8',    // Bleu - ligne 3B
   '4': '#C902A0',  // Rose foncé - ligne 4
   '5': '#F28E42',  // Orange - ligne 5
   '6': '#6EC68D',  // Vert - ligne 6
   '7': '#FA9EBA',  // Rose - ligne 7
   '7bis': '#84C0D4',  // Bleu ciel - ligne 7bis
+  '7B': '#6ECA97',    // Vert d'eau - ligne 7B
   '8': '#C5A3CA',  // Violet clair - ligne 8
   '9': '#CEC92B',  // Vert olive - ligne 9
   '10': '#E4B327',  // Orange foncé - ligne 10
@@ -328,7 +350,7 @@ async function fetchACPM() {
   try {
     const res = await fetch('http://localhost:5050/acpm')
     const data = await res.json()
-
+    acpmTotalWeight.value = data.total_weight
     acpmPath.value = data.mst.map(edge => {
       // Utiliser des noms au lieu des IDs
       const fromStation = stations.value.find(s => s.name === edge.from.name)
@@ -354,6 +376,7 @@ async function fetchACPM() {
   } catch (error) {
     console.error("Erreur lors du chargement de l'ACPM:", error)
     acpmPath.value = []
+    acpmTotalWeight.value = null
   }
 }
 
@@ -666,6 +689,40 @@ async function computeLinesPolylines() {
     console.error('Erreur lors du chargement des lignes ordonnées:', e);
   }
 }
+
+function formatSecondsToHMS(seconds) {
+  if (!seconds || isNaN(seconds)) return '0s';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  return [
+    h > 0 ? String(h).padStart(2, '0') : null,
+    String(m).padStart(2, '0'),
+    String(s).padStart(2, '0')
+  ].filter(Boolean).join(':');
+}
+
+watch(acpmTotalWeight, (newVal) => {
+  if (typeof newVal === 'number' && newVal > 0) {
+    acpmAnimating.value = true
+    let start = 0
+    const duration = 1200 // ms
+    const startTime = performance.now()
+    function animate(now) {
+      const elapsed = now - startTime
+      const progress = Math.min(elapsed / duration, 1)
+      acpmAnimatedWeight.value = Math.floor(progress * newVal)
+      if (progress < 1) {
+        requestAnimationFrame(animate)
+      } else {
+        acpmAnimatedWeight.value = newVal
+        // End animation class after a short delay
+        setTimeout(() => acpmAnimating.value = false, 600)
+      }
+    }
+    requestAnimationFrame(animate)
+  }
+})
 
 onMounted(async () => {
   try {
@@ -1051,5 +1108,70 @@ onMounted(async () => {
 }
 .legend-lines {
   display: none;
+}
+.acpm-refined-badge-wrap {
+  margin-top: 16px;
+}
+.acpm-refined-badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(242, 245, 248, 0.65);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  border-radius: 50px;
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 0.9),
+    0 4px 12px rgba(0, 0, 0, 0.05),
+    0 8px 24px rgba(0, 0, 0, 0.05);
+  padding: 8px 20px 8px 12px;
+  transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.acpm-refined-badge.is-animating {
+  transform: scale(1.03);
+  box-shadow:
+    inset 0 0 0 1.5px rgba(255, 255, 255, 1),
+    0 6px 16px rgba(45, 140, 245, 0.1),
+    0 12px 32px rgba(45, 140, 245, 0.15);
+}
+.acpm-refined-icon {
+  display: flex;
+  align-items: center;
+  color: #005bb5;
+  opacity: 0.8;
+}
+.acpm-refined-value-wrapper {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.3em;
+  font-weight: 600;
+  color: #003c7a;
+  position: relative;
+  height: 1.4em;
+  line-height: 1.4em;
+  overflow: hidden;
+}
+.slide-up-num-enter-active, .slide-up-num-leave-active {
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  position: absolute;
+}
+.slide-up-num-enter-from {
+  opacity: 0.5;
+  transform: translateY(100%);
+}
+.slide-up-num-leave-to {
+  opacity: 0.5;
+  transform: translateY(-100%);
+}
+.acpm-refined-anim-value {
+  display: inline-block;
+}
+.fade-scale-enter-active, .fade-scale-leave-active {
+  transition: all 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.fade-scale-enter-from, .fade-scale-leave-to {
+  opacity: 0;
+  transform: scale(0.9);
 }
 </style>
