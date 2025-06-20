@@ -74,6 +74,9 @@
           <button class="acpm-button secondary" @click="handleTestConnexity" style="margin-top:8px;">
             Tester la connexité
           </button>
+          <button class="acpm-button secondary" @click="toggleLines" style="margin-top:8px;">
+            {{ showLines ? 'Masquer les lignes' : 'Afficher les lignes' }}
+          </button>
         </div>
       </div>
     </div>
@@ -93,6 +96,19 @@
         name="OpenStreetMap"
       />
 
+      <!-- Tracé des lignes de métro -->
+      <l-polyline
+        v-if="showLines"
+        v-for="(line, idx) in linesPolylines"
+        :key="'line-polyline-' + line.line"
+        :lat-lngs="line.path"
+        :color="line.color"
+        :weight="6"
+        :opacity="0.85"
+        :line-cap="'round'"
+        :line-join="'round'"
+      />
+
       <!-- Les markers et lignes restent affichés -->
       <l-marker
         v-for="station in stations"
@@ -102,13 +118,16 @@
         @mouseout="hoveredStation = null"
         @click="selectStation(station)"
       >
-        <l-tooltip v-if="hoveredStation === station.id">
-          {{ station.name }}
+        <l-tooltip v-if="hoveredStation === station.id" direction="top" :permanent="false" class="station-tooltip-custom">
+          <div class="station-tooltip-title">{{ station.name }}</div>
+          <div class="station-tooltip-lines">
+            <span v-for="line in station.lines" :key="line" class="line-badge" :style="{ backgroundColor: LINE_COLORS[line] || '#1976d2' }">{{ line }}</span>
+          </div>
         </l-tooltip>
         <l-icon
           :icon-url="getIconUrl(station)"
-          :icon-size="[12, 12]"
-          :icon-anchor="[6, 6]"
+          :icon-size="[28, 28]"
+          :icon-anchor="[14, 14]"
         />
       </l-marker>
       <l-polyline
@@ -139,6 +158,14 @@
         :opacity="1.0"
       />
     </l-map>
+
+    <!-- Légende des lignes -->
+    <div class="legend-lines">
+      <div v-for="(color, line) in LINE_COLORS" :key="line" class="legend-line-item">
+        <span class="legend-line-badge" :style="{ backgroundColor: color }">{{ line }}</span>
+        <span class="legend-line-label">Ligne {{ line }}</span>
+      </div>
+    </div>
 
     <!-- Modal Connexité -->
     <div v-if="showConnexityModal" class="connexity-modal-bg" @click.self="closeConnexityModal">
@@ -213,6 +240,8 @@ const showConnexityModal = ref(false)
 const connexityResult = ref(null)
 const connexityLoading = ref(false)
 const connexityError = ref(null)
+const showLines = ref(false)
+const linesPolylines = ref([])
 
 // Configuration de la carte personnalisée
 const crs = L.CRS.Simple
@@ -245,22 +274,22 @@ const Y_MAX = 933
 
 // Mapping des couleurs pour les lignes de métro avec saturation augmentée pour meilleur contraste
 const LINE_COLORS = {
-  '1': '#B89B00',  // Jaune foncé
-  '2': '#0064B0',
-  '3': '#9F9825',
-  '3bis': '#98D4E2',
-  '4': '#C902A0',
-  '5': '#F28E42',
-  '6': '#6EC68D',
-  '7': '#B86A7A',  // Rose foncé
-  '7bis': '#84C0D4',
-  '8': '#A07CB3',  // Violet foncé
-  '9': '#8A8A00',  // Vert olive foncé
-  '10': '#B88A00', // Orange foncé
-  '11': '#8D5E2A',
-  '12': '#007E52',
-  '13': '#73C0E9',
-  '14': '#662483'
+  '1': '#FFCE00',  // Jaune - ligne 1
+  '2': '#0064B0',  // Bleu foncé - ligne 2
+  '3': '#9F9825',  // Marron - ligne 3
+  '3bis': '#98D4E2',  // Bleu clair - ligne 3bis
+  '4': '#C902A0',  // Rose foncé - ligne 4
+  '5': '#F28E42',  // Orange - ligne 5
+  '6': '#6EC68D',  // Vert - ligne 6
+  '7': '#FA9EBA',  // Rose - ligne 7
+  '7bis': '#84C0D4',  // Bleu ciel - ligne 7bis
+  '8': '#C5A3CA',  // Violet clair - ligne 8
+  '9': '#CEC92B',  // Vert olive - ligne 9
+  '10': '#E4B327',  // Orange foncé - ligne 10
+  '11': '#8D5E2A',  // Marron clair - ligne 11
+  '12': '#007E52',  // Vert foncé - ligne 12
+  '13': '#73C0E9',  // Bleu clair - ligne 13
+  '14': '#662483'   // Violet - ligne 14
 }
 
 // Charger les stations depuis l'API
@@ -411,18 +440,33 @@ function getLatLng(station) {
     return [0, 0];
   }
 
-
-
   return [x/1000, y/1000];
 }
 
+function getStationType(station) {
+  // Détecte si la station est une correspondance ou un terminus
+  if (station.lines && station.lines.length > 1) return 'correspondance';
+  if (station.isTerminus || station.terminus) return 'terminus';
+  return 'simple';
+}
+
 function getIconUrl(station) {
-  if (selectedStart.value === station.name) {
-    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="%2334C759" stroke="white" stroke-width="2"/></svg>'
-  } else if (selectedEnd.value === station.name) {
-    return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="%23FF3B30" stroke="white" stroke-width="2"/></svg>'
+  const line = Array.isArray(station.lines) && station.lines.length > 0 ? station.lines[0] : '1';
+  const color = LINE_COLORS[line] || '#1976d2';
+  let radius = 7, stroke = 3, glow = '', fill = color, strokeColor = 'white';
+  // Détection du type de station
+  if (station.lines && station.lines.length > 1) {
+    radius = 7; stroke = 3; // même taille que les stations simples
+    fill = '#fff'; // correspondance = point blanc
+    strokeColor = 'black'; // contour noir pour correspondance
+    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='3' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
+  } else if (station.isTerminus || station.terminus) {
+    radius = 12; stroke = 5;
+    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='4' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
   }
-  return 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="rgba(0,0,0,0.6)" stroke="white" stroke-width="1.5"/></svg>'
+  // Encodage du SVG, attention au # dans filter
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>${glow}<circle cx='14' cy='14' r='${radius}' fill='${fill}' stroke='${strokeColor}' stroke-width='${stroke}'${glow ? " filter='url(%23glow)'" : ''}/></svg>`;
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
 function selectStation(station) {
@@ -593,6 +637,34 @@ function closeConnexityModal() {
   showConnexityModal.value = false
   connexityResult.value = null
   connexityError.value = null
+}
+
+function toggleLines() {
+  showLines.value = !showLines.value
+  if (showLines.value) {
+    computeLinesPolylines()
+  }
+}
+
+async function computeLinesPolylines() {
+  try {
+    const res = await fetch('http://localhost:5050/stations/ordered_by_line');
+    const data = await res.json();
+    // data: { ligne: [ [branche1], [branche2], ... ] }
+    linesPolylines.value = [];
+    Object.entries(data).forEach(([line, branches]) => {
+      branches.forEach(branch => {
+        linesPolylines.value.push({
+          line,
+          color: LINE_COLORS[line] || '#000',
+          path: branch.map(s => [s.position[0] / 1000, s.position[1] / 1000]),
+        });
+      });
+    });
+  } catch (e) {
+    linesPolylines.value = [];
+    console.error('Erreur lors du chargement des lignes ordonnées:', e);
+  }
 }
 
 onMounted(async () => {
@@ -945,5 +1017,39 @@ onMounted(async () => {
   color: #ffbaba;
   font-size: 1.1rem;
   margin: 24px 0;
+}
+.station-tooltip-custom {
+  background: rgba(255,255,255,0.95);
+  color: #222;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 15px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  min-width: 90px;
+  text-align: center;
+}
+.station-tooltip-title {
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 4px;
+}
+.station-tooltip-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: center;
+}
+.line-badge {
+  display: inline-block;
+  color: #fff;
+  font-weight: 600;
+  font-size: 13px;
+  border-radius: 8px;
+  padding: 2px 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  border: 1.5px solid #fff;
+}
+.legend-lines {
+  display: none;
 }
 </style>

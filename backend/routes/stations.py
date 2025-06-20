@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from utils.parser import load_data
 import logging
 import time
+from collections import defaultdict, deque
 
 logger = logging.getLogger(__name__)
 stations_bp = Blueprint('stations', __name__)
@@ -110,3 +111,71 @@ def get_stations_list():
     except Exception as e:
         logger.error(f"Erreur lors du traitement de la requête: {str(e)}", exc_info=True)
         return jsonify({'error': 'Erreur interne du serveur'}), 500 
+
+@stations_bp.route('/stations/ordered_by_line', methods=['GET'])
+def get_stations_ordered_by_line():
+    """
+    Retourne, pour chaque ligne, un tableau de branches (chaque branche = séquence complète depuis le terminus principal jusqu'au bout de la branche, en passant par la bifurcation).
+    Gère les lignes à branches (ex : 7, 13, etc) sans trous.
+    """
+    graph, positions, stations = load_data()
+    # Regrouper les stations par ligne
+    line_to_station_ids = defaultdict(list)
+    # Pour chaque ligne, construire le graphe de la ligne
+    line_graphs = defaultdict(lambda: defaultdict(list))
+    for station_id, station in stations.items():
+        lines = station['line'] if isinstance(station['line'], list) else [station['line']]
+        for line in lines:
+            line_to_station_ids[line].append(station_id)
+    # Construire le graphe de chaque ligne
+    for line, ids in line_to_station_ids.items():
+        for station_id in ids:
+            for neighbor_id in graph[station_id]:
+                # Vérifier que le voisin partage la même ligne
+                neighbor_lines = stations[neighbor_id]['line'] if isinstance(stations[neighbor_id]['line'], list) else [stations[neighbor_id]['line']]
+                if line in neighbor_lines:
+                    line_graphs[line][station_id].append(neighbor_id)
+    # Pour chaque ligne, trouver tous les terminus (degré 1)
+    result = {}
+    for line, g in line_graphs.items():
+        # Points de départ : terminus (degré 1)
+        terminus = [station_id for station_id, neighbors in g.items() if len(neighbors) == 1]
+        # Si pas de terminus (ligne circulaire), prendre un point arbitraire
+        if not terminus and g:
+            terminus = [next(iter(g))]
+        # Pour chaque couple de terminus, trouver le chemin
+        paths = []
+        for i in range(len(terminus)):
+            for j in range(i+1, len(terminus)):
+                start, end = terminus[i], terminus[j]
+                # BFS pour trouver le chemin unique entre start et end
+                queue = deque([(start, [start])])
+                visited = set()
+                found = False
+                while queue and not found:
+                    current, path = queue.popleft()
+                    if current == end:
+                        # Chemin trouvé
+                        paths.append(path)
+                        found = True
+                        break
+                    visited.add(current)
+                    for neighbor in g[current]:
+                        if neighbor not in visited and neighbor not in path:
+                            queue.append((neighbor, path + [neighbor]))
+        # Enlever les chemins qui sont strictement inclus dans un autre (pour ne garder que les branches complètes)
+        unique_paths = []
+        for p in paths:
+            if not any(set(p) < set(other) for other in paths if p != other):
+                unique_paths.append(p)
+        # Formater les branches
+        branches = []
+        for path in unique_paths:
+            branch = [{
+                'id': sid,
+                'name': stations[sid]['name'],
+                'position': positions.get(sid)
+            } for sid in path]
+            branches.append(branch)
+        result[line] = branches
+    return jsonify(result) 

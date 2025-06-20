@@ -216,12 +216,6 @@ function closeConnexityModal() {
                   <span v-if="stationIndex === 0" class="station-label">Départ</span>
                   <span v-else-if="stationIndex === segment.stations.length - 1" class="station-label">Arrivée</span>
                   <span
-                    v-else-if="stationLinesMap[station] && stationLinesMap[station].length > 1"
-                    class="station-label transfer-indicator-label"
-                  >
-                    Correspondance
-                  </span>
-                  <span
                     v-if="isInterchange(index, stationIndex)"
                     class="interchange-lines"
                   >
