@@ -136,6 +136,39 @@ class DataManager:
                 neighbor_id = station_name_to_id[neighbor_name]
                 graph[station_id][neighbor_id] = weight
         
+        # Correction manuelle de la topologie de la 7B (relations exactes)
+        def find_station_id(nom, ligne):
+            for sid, s in stations.items():
+                lines = s['line'] if isinstance(s['line'], list) else [s['line']]
+                if s['name'] == nom and ligne in lines:
+                    return sid
+            return None
+        id_place = find_station_id('Place des Fêtes', '7B')
+        id_pre = find_station_id('Pré-Saint-Gervais', '7B')
+        id_botz = find_station_id('Botzaris', '7B')
+        id_danube = find_station_id('Danube', '7B')
+        # Supprimer tous les liens existants entre ces stations (pour éviter les doublons ou cycles)
+        for a, b in [(id_place, id_pre), (id_place, id_danube), (id_botz, id_pre), (id_botz, id_danube), (id_place, id_botz), (id_pre, id_danube)]:
+            if a and b and b in graph[a]:
+                del graph[a][b]
+            if a and b and a in graph[b]:
+                del graph[b][a]
+        # Ajouter Botzaris <-> Place des Fêtes <-> Pré-Saint-Gervais
+        if id_botz and id_place:
+            graph[id_botz][id_place] = 60
+            graph[id_place][id_botz] = 60
+        if id_place and id_pre:
+            graph[id_place][id_pre] = 60
+            graph[id_pre][id_place] = 60
+        # Ajouter Pré-Saint-Gervais <-> Danube <-> Botzaris
+        if id_pre and id_danube:
+            graph[id_pre][id_danube] = 60
+            graph[id_danube][id_pre] = 60
+        # FORCER le lien Danube <-> Botzaris à la toute fin
+        if id_danube and id_botz:
+            graph[id_danube][id_botz] = 60
+            graph[id_botz][id_danube] = 60
+        
         return graph, positions, stations
     
     def _save_to_cache(self):
