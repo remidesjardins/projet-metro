@@ -19,11 +19,13 @@ const LINE_COLORS = {
   '2': '#0064B0',  // Bleu foncé - ligne 2
   '3': '#9F9825',  // Marron - ligne 3
   '3bis': '#98D4E2',  // Bleu clair - ligne 3bis
+  '3B': '#6EC4E8',    // Bleu - ligne 3B
   '4': '#C902A0',  // Rose foncé - ligne 4
   '5': '#F28E42',  // Orange - ligne 5
   '6': '#6EC68D',  // Vert - ligne 6
   '7': '#FA9EBA',  // Rose - ligne 7
   '7bis': '#84C0D4',  // Bleu ciel - ligne 7bis
+  '7B': '#6ECA97',    // Vert d'eau - ligne 7B
   '8': '#C5A3CA',  // Violet clair - ligne 8
   '9': '#CEC92B',  // Vert olive - ligne 9
   '10': '#E4B327',  // Orange foncé - ligne 10
