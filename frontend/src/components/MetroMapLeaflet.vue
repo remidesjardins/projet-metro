@@ -166,11 +166,26 @@
         </div>
       </div>
     </div>
+
+    <div v-if="pathLength && pathLength.duration" class="path-info">
+      <div class="duration">
+        <i class="fas fa-clock"></i>
+        {{ Math.floor(pathLength.duration / 60) }}min {{ pathLength.duration % 60 }}s
+      </div>
+      <div class="emissions">
+        <i class="fas fa-leaf"></i>
+        {{ pathLength.emissions }}g CO₂
+      </div>
+      <div class="stations-count">
+        <i class="fas fa-map-marker-alt"></i>
+        {{ pathLength.stationsCount }} stations
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, inject } from 'vue'
+import { ref, onMounted, inject } from 'vue' // ✅ Ajouter inject
 import { LMap, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay, LTileLayer } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -193,12 +208,13 @@ const stations = ref([])
 const hoveredStation = ref(null)
 const selectedStart = ref(null)
 const selectedEnd = ref(null)
+const startId = ref(null)
+const endId = ref(null)
 const zoom = ref(13)
 const center = ref([48.8566, 2.3522])
 const showACPM = ref(false)
 const acpmPath = ref([])
 const shortestPath = ref([])
-const pathLength = inject('pathLength')
 const searchStart = ref('')
 const searchEnd = ref('')
 const searchResultsStart = ref([])
@@ -362,11 +378,13 @@ function selectStationFromSearch(station, isStart) {
   if (isStart) {
     selectedStart.value = station.name
     searchStart.value = station.name
+    startId.value = station.ids[0]
     searchResultsStart.value = []
     isStartFocused.value = false
   } else {
     selectedEnd.value = station.name
     searchEnd.value = station.name
+    endId.value = station.ids[0]
     searchResultsEnd.value = []
     isEndFocused.value = false
   }
@@ -391,7 +409,6 @@ function clearPath() {
   searchEnd.value = ''
   shortestPath.value = []
   pathDetails.value = []
-  pathLength.value = null
 }
 
 function getLatLng(station) {
@@ -429,115 +446,90 @@ function selectStation(station) {
   if (!selectedStart.value) {
     selectedStart.value = station.name
     searchStart.value = station.name
-  } else if (!selectedEnd.value && station.name !== selectedStart.value) {
+    startId.value = station.ids[0]
+    } else if (!selectedEnd.value && station.name !== selectedStart.value) {
     selectedEnd.value = station.name
     searchEnd.value = station.name
+    endId.value = station.ids[0]
     calculatePath()
   } else {
     selectedStart.value = station.name
     searchStart.value = station.name
+    startId.value = station.ids[0]
     selectedEnd.value = null
     searchEnd.value = ''
+    endId.value = null
     shortestPath.value = []
     pathDetails.value = []
-    pathLength.value = null
   }
 }
+
+const pathLength = inject('pathLength')
 
 async function calculatePath() {
     if (!selectedStart.value || !selectedEnd.value) return
 
     try {
-        const response = await api.calculateItinerary(
-            selectedStart.value,
-            selectedEnd.value
-        )
-
-        // Mise à jour des détails du chemin avec regroupement par ligne
-        const segments = []
-        let currentSegment = null
-
-        for (let i = 0; i < response.path.length; i++) {
-            const step = response.path[i]
-            const nextStep = response.path[i + 1]
-
-            if (!currentSegment || currentSegment.line !== step.line) {
-                if (currentSegment) {
-                    segments.push(currentSegment)
-                }
-                currentSegment = {
-                    line: step.line,
-                    stations: [step.name],
-                    duration: 0
-                }
-            } else {
-                currentSegment.stations.push(step.name)
-            }
-
-            // Ajouter le temps réel entre les stations
-            if (nextStep && step.time) {
-                currentSegment.duration += step.time
-            }
+        const response = await api.calculateItinerary(startId.value, endId.value)
+        
+        console.log('=== DEBUG RESPONSE ===')
+        console.log('Response complète:', response)
+        
+        // ✅ MODIFICATION : Mettre à jour le pathLength injecté
+        pathLength.value = {
+            duration: response.duration,
+            emissions: response.emissions,
+            stationsCount: response.stations_count
         }
-
-        if (currentSegment) {
-            segments.push(currentSegment)
-        }
+        
+        console.log('=== DEBUG APRÈS MISE À JOUR ===')
+        console.log('pathLength.value après injection:', pathLength.value)
+        
+        // Mise à jour des détails du chemin avec le nouveau format
+        const segments = response.chemin.map(ligneSegment => ({
+            line: ligneSegment.Ligne,
+            stations: ligneSegment.Stations.map(station => station["Nom Station"]),
+            duration: 0, // À calculer si nécessaire
+            stationsCount: ligneSegment.Stations.length
+        }))
 
         pathDetails.value = segments
 
         // Remettre à zéro le chemin sur la carte
         shortestPath.value = []
 
-        // Regrouper les segments par ligne pour l'affichage
-        let currentLine = null
-        let currentPathSegment = null
+        // Créer les segments pour l'affichage sur la carte
+        response.chemin.forEach((ligneSegment, segmentIndex) => {
+            const ligne = ligneSegment.Ligne
+            const stations = ligneSegment.Stations
+            
+            if (stations.length < 2) return // Pas assez de stations pour tracer une ligne
 
-        for (let i = 0; i < response.path.length - 1; i++) {
-            const current = response.path[i]
-            const next = response.path[i + 1]
-
-            if (!current || !next) continue
-
-            try {
-                // Convertir les coordonnées
-                const latLngA = getLatLng({ x: current.x, y: current.y })
-                const latLngB = getLatLng({ x: next.x, y: next.y })
-
-                // Déterminer si c'est un nouveau segment de ligne
-                if (current.line !== currentLine) {
-                    currentLine = current.line
-                    // Ligne couleur
-                    currentPathSegment = {
-                        path: [latLngA, latLngB],
-                        color: LINE_COLORS[current.line] || '#000000',
-                        weight: 8,
-                        opacity: 1.0,
-                        lineCap: 'round',
-                        lineJoin: 'round',
-                        className: 'route-main'
-                    }
-                    shortestPath.value.push(currentPathSegment)
-                } else {
-                    // Continuer le segment existant
-                    if (currentPathSegment) {
-                        currentPathSegment.path.push(latLngB)
-                    }
+            const pathCoordinates = []
+            
+            // Convertir toutes les positions des stations de cette ligne
+            stations.forEach(station => {
+                if (station.Position && station.Position.length === 2) {
+                    const latLng = getLatLng({ position: station.Position })
+                    pathCoordinates.push(latLng)
                 }
-            } catch (error) {
-                console.error(`Erreur lors de la création du segment ${i}:`, error)
-            }
-        }
+            })
 
-        // Mise à jour de la durée totale
-        pathLength.value = response.total_time
+            if (pathCoordinates.length >= 2) {
+                shortestPath.value.push({
+                    path: pathCoordinates,
+                    color: LINE_COLORS[ligne] || '#000000',
+                    weight: 8,
+                    opacity: 1.0,
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                    className: 'route-main'
+                })
+            }
+        })
 
     } catch (error) {
-        console.error('Erreur lors du calcul de l\'itinéraire:', error)
-        // Réinitialiser les valeurs en cas d'erreur
-        shortestPath.value = []
-        pathDetails.value = []
-        pathLength.value = null
+        console.error('Erreur lors du calcul:', error)
     }
 }
 
@@ -945,5 +937,46 @@ onMounted(async () => {
   color: #ffbaba;
   font-size: 1.1rem;
   margin: 24px 0;
+}
+
+.path-info {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 255, 255, 0.95);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  font-size: 14px;
+}
+
+.path-info > div {
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.path-info > div:last-child {
+  margin-bottom: 0;
+}
+
+.path-info i {
+  width: 16px;
+  color: #666;
+}
+
+.duration {
+  color: #2196F3;
+  font-weight: 600;
+}
+
+.emissions {
+  color: #4CAF50;
+}
+
+.stations-count {
+  color: #FF9800;
 }
 </style>

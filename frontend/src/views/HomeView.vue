@@ -1,11 +1,15 @@
 <script setup>
 import MetroMapLeaflet from '../components/MetroMapLeaflet.vue'
 import ServerStatus from '../components/ServerStatus.vue'
-import { ref, provide, onMounted, computed } from 'vue'
+import { ref, provide, onMounted, computed, watch } from 'vue'
 import { api } from '../services/api'
 
 const pathDetails = ref([])
-const pathLength = ref(null)
+const pathLength = ref({
+  duration: null,
+  emissions: null,
+  stationsCount: null
+})
 const startStation = ref('')
 const startStationSuggestions = ref([])
 const connexityResult = ref(null)
@@ -48,28 +52,51 @@ function isInterchange(segmentIndex, stationIndex) {
   return false;
 }
 
-// Fonction pour formater le temps
-function formatTime(seconds) {
-  if (!seconds) return '0 min';
+// ✅ WATCHER POUR DÉBUGGER
+watch(pathLength, (newValue) => {
+    console.log('=== DEBUG HOMEVIEW pathLength WATCH ===')
+    console.log('HomeView pathLength changé:', newValue)
+    console.log('Duration:', newValue?.duration, 'Type:', typeof newValue?.duration)
+    console.log('Emissions:', newValue?.emissions, 'Type:', typeof newValue?.emissions)
+}, { deep: true })
 
-  // Convertir les secondes en minutes et arrondir
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
+// ✅ FONCTION formatTime AMÉLIORÉE avec debug
+function formatTime(pathLengthObj) {
+    console.log('=== DEBUG formatTime ===')
+    console.log('Input reçu:', pathLengthObj)
+    console.log('Type input:', typeof pathLengthObj)
+    
+    const seconds = pathLengthObj?.duration || pathLengthObj || 0;
+    console.log('Seconds calculées:', seconds, 'Type:', typeof seconds)
+    
+    if (!seconds || isNaN(seconds)) {
+        console.log('Seconds invalides, retour 0 min')
+        return '0 min';
+    }
 
-  if (minutes === 0) {
-    return `${remainingSeconds} sec`;
-  } else if (remainingSeconds === 0) {
-    return `${minutes} min`;
-  } else {
-    return `${minutes} min ${remainingSeconds} sec`;
-  }
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.round(seconds % 60);
+    
+    console.log('Minutes:', minutes, 'Secondes restantes:', remainingSeconds)
+
+    if (minutes === 0) {
+        return `${remainingSeconds} sec`;
+    } else if (remainingSeconds === 0) {
+        return `${minutes} min`;
+    } else {
+        return `${minutes} min ${remainingSeconds} sec`;
+    }
 }
 
-// Fonction pour calculer le nombre total de stations
 function getTotalStations() {
+  // Utiliser d'abord pathLength.stationsCount si disponible
+  if (pathLength.value?.stationsCount) {
+    return pathLength.value.stationsCount;
+  }
+  
+  // Fallback sur l'ancien calcul si pathLength.stationsCount n'est pas disponible
   if (!pathDetails.value || pathDetails.value.length === 0) return 0;
 
-  // Count unique stations across all segments
   const allStations = pathDetails.value.flatMap(segment => segment.stations);
   const uniqueStations = [...new Set(allStations)];
   return uniqueStations.length;
@@ -162,6 +189,24 @@ function closeConnexityModal() {
           </div>
         </div>
 
+        <div class="trip-info-panel">
+          <div class="info-item">
+            <span class="info-icon time-icon"></span>
+            <span class="info-label">Durée</span>
+            <span class="info-value">{{ formatTime(pathLength) }}</span>
+          </div>
+          <div class="info-item">
+            <span class="info-icon emissions-icon"></span>
+            <span class="info-label">Émissions</span>
+            <span class="info-value">{{ pathLength?.emissions || 0 }}g CO₂</span>
+          </div>
+          <div class="info-item">
+            <span class="info-icon stations-icon"></span>
+            <span class="info-label">Stations</span>
+            <span class="info-value">{{ getTotalStations() }}</span>
+          </div>
+        </div>
+
         <div class="timeline">
           <div
             v-for="(segment, index) in pathDetails"
@@ -243,6 +288,10 @@ function closeConnexityModal() {
             <span class="detail-item">
               <span class="detail-icon transfer-icon"></span>
               {{ pathDetails.length - 1 }} correspondances
+            </span>
+            <span class="detail-item">
+              <span class="detail-icon emissions-icon"></span>
+              {{ pathLength?.emissions || 0 }}g CO₂
             </span>
           </div>
         </div>
@@ -331,6 +380,13 @@ function closeConnexityModal() {
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ✅ DEBUG DANS LE TEMPLATE -->
+    <div class="debug-panel" style="position: fixed; top: 10px; left: 10px; background: black; color: white; padding: 10px; z-index: 9999; font-size: 12px;">
+        <div>pathLength: {{ JSON.stringify(pathLength, null, 2) }}</div>
+        <div>duration: {{ pathLength?.duration }} ({{ typeof pathLength?.duration }})</div>
+        <div>emissions: {{ pathLength?.emissions }} ({{ typeof pathLength?.emissions }})</div>
     </div>
   </main>
 </template>
@@ -832,5 +888,70 @@ function closeConnexityModal() {
   margin-left: 1.5em;
   color: #fff;
   opacity: 0.8;
+}
+
+.trip-info-panel {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--spacing-sm);
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+}
+
+.info-icon {
+  width: 24px;
+  height: 24px;
+  background-size: contain;
+  opacity: 0.8;
+}
+
+.info-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+}
+
+.info-value {
+  font-size: 16px;
+  color: white;
+  font-weight: 600;
+}
+
+.emissions-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 13l3 3 7-7'%3E%3C/path%3E%3Cpath d='M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z'%3E%3C/path%3E%3C/svg%3E");
+}
+
+.stations-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'%3E%3C/circle%3E%3Cpath d='M12 1v6m0 6v6'%3E%3C/path%3E%3Cpath d='M23 12h-6m-6 0H1'%3E%3C/path%3E%3C/svg%3E");
+}
+
+/* ...existing code... */
+
+/* ✅ MODIFICATION : Responsive pour le nouveau panneau */
+@media (max-width: 768px) {
+  .trip-info-panel {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-xs);
+  }
+  
+  .info-item {
+    flex-direction: row;
+    justify-content: space-between;
+    text-align: left;
+  }
+  
+  .info-value {
+    margin-left: auto;
+  }
 }
 </style>

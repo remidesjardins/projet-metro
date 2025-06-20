@@ -10,12 +10,12 @@ export const api = {
     },
 
     async calculateItinerary(start, end) {
-        const response = await fetch(`${API_URL}/itineraire`, {
+        const response = await fetch(`${API_URL}/shortest-path`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+            'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ start, end })
+            body: JSON.stringify({ start: start.toString(), end: end.toString() })
         })
         if (!response.ok) {
             const error = await response.json()
