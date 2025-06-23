@@ -210,21 +210,6 @@
         </div>
       </div>
     </div>
-
-    <div v-if="pathLength && pathLength.duration" class="path-info">
-      <div class="duration">
-        <i class="fas fa-clock"></i>
-        {{ Math.floor(pathLength.duration / 60) }}min {{ pathLength.duration % 60 }}s
-      </div>
-      <div class="emissions">
-        <i class="fas fa-leaf"></i>
-        {{ pathLength.emissions }}g CO₂
-      </div>
-      <div class="stations-count">
-        <i class="fas fa-map-marker-alt"></i>
-        {{ pathLength.stationsCount }} stations
-      </div>
-    </div>
   </div>
 </template>
 
@@ -534,8 +519,6 @@ function selectStation(station) {
 const pathLength = inject('pathLength')
 
 async function calculatePath() {
-    if (!selectedStart.value || !selectedEnd.value) return
-
     try {
         const response = await api.calculateItinerary(startId.value, endId.value)
         
@@ -545,11 +528,11 @@ async function calculatePath() {
             stationsCount: response.stations_count
         }
         
-        // Mise à jour des détails du chemin avec le nouveau format
+        // ✅ SIMPLIFICATION : Utiliser directement les données du backend
         const segments = response.chemin.map(ligneSegment => ({
             line: ligneSegment.Ligne,
             stations: ligneSegment.Stations.map(station => station["Nom Station"]),
-            duration: 0, // À calculer si nécessaire
+            duration: ligneSegment.Duration, // ✅ DIRECTEMENT du backend
             stationsCount: ligneSegment.Stations.length
         }))
 

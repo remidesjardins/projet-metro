@@ -104,7 +104,7 @@ def get_shortest_path():
         return round(total_emissions, 2)
 
     # Nouvelle fonction utilitaire pour regrouper le chemin par ligne
-    def group_path_by_line_with_labels(path, stations, positions):
+    def group_path_by_line_with_labels(path, stations, positions, dist):
         """
         Retourne une liste ordonnée de dictionnaires avec labels explicites et informations détaillées sur les stations
         [
@@ -149,13 +149,13 @@ def get_shortest_path():
                 # Cas rare : pas de ligne commune, on prend la première de la station courante
                 chosen_line = list(lines)[0]
             
-            # Créer l'objet station avec toutes les informations (Nom Station en premier)
+            # Créer l'objet station avec toutes les informations
             station_info = {
                 "Nom Station": station['name'],
                 "ID": station_id,
                 "Lignes": sorted(list(lines)),
                 "Position": positions.get(station_id, None),
-                "Type": station.get('type', 'metro')  # 'metro' par défaut
+                "Type": station.get('type', 'metro')
             }
             
             # Si on change de ligne
@@ -175,24 +175,37 @@ def get_shortest_path():
                 current_stations.append(station_info)
             current_line = chosen_line
         
-        # Ajouter la dernière station au dernier tronçon
+        # Ajouter la dernière station
         last_station = stations[path[-1]]
         last_station_info = {
             "Nom Station": last_station['name'],
             "ID": path[-1],
             "Lignes": sorted(list(set(last_station['line'].split(',') if isinstance(last_station['line'], str) else last_station['line']))),
             "Position": positions.get(path[-1], None),
-            "Type": last_station.get('type', 'metro')  # 'metro' par défaut
+            "Type": last_station.get('type', 'metro')
         }
         current_stations.append(last_station_info)
         result.append({
             "Ligne": current_line,
             "Stations": current_stations
         })
+        
+        # ✅ NOUVEAU : Calculer la durée pour chaque segment
+        total_duration = dist  # Durée totale du trajet
+        total_segments = sum(max(0, len(segment["Stations"]) - 1) for segment in result)
+        
+        for segment in result:
+            stations_in_segment = max(0, len(segment["Stations"]) - 1)
+            if total_segments > 0:
+                segment_duration = round((stations_in_segment / total_segments) * total_duration)
+            else:
+                segment_duration = 0
+            segment["Duration"] = segment_duration  # ✅ AJOUT de la durée
+        
         return result
 
     # Nouveau format groupé par ligne avec labels et informations détaillées
-    path_by_line = group_path_by_line_with_labels(path, stations, positions)
+    path_by_line = group_path_by_line_with_labels(path, stations, positions, dist)  # ✅ Passer dist
     
     # Calculer les émissions carbone
     emissions = calculate_emissions(path, stations, positions)
