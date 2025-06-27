@@ -190,7 +190,6 @@ def get_shortest_path():
             "Stations": current_stations
         })
         
-        # ✅ NOUVEAU : Calculer la durée pour chaque segment
         total_duration = dist  # Durée totale du trajet
         total_segments = sum(max(0, len(segment["Stations"]) - 1) for segment in result)
         
@@ -200,12 +199,11 @@ def get_shortest_path():
                 segment_duration = round((stations_in_segment / total_segments) * total_duration)
             else:
                 segment_duration = 0
-            segment["Duration"] = segment_duration  # ✅ AJOUT de la durée
+            segment["Duration"] = segment_duration
         
         return result
 
-    # Nouveau format groupé par ligne avec labels et informations détaillées
-    path_by_line = group_path_by_line_with_labels(path, stations, positions, dist)  # ✅ Passer dist
+    path_by_line = group_path_by_line_with_labels(path, stations, positions, dist)
     
     # Calculer les émissions carbone
     emissions = calculate_emissions(path, stations, positions)

@@ -528,11 +528,10 @@ async function calculatePath() {
             stationsCount: response.stations_count
         }
         
-        // ✅ SIMPLIFICATION : Utiliser directement les données du backend
         const segments = response.chemin.map(ligneSegment => ({
             line: ligneSegment.Ligne,
             stations: ligneSegment.Stations.map(station => station["Nom Station"]),
-            duration: ligneSegment.Duration, // ✅ DIRECTEMENT du backend
+            duration: ligneSegment.Duration,
             stationsCount: ligneSegment.Stations.length
         }))
 
@@ -684,7 +683,6 @@ watch(acpmTotalWeight, (newVal) => {
         requestAnimationFrame(animate)
       } else {
         acpmAnimatedWeight.value = newVal
-        // End animation class after a short delay
         setTimeout(() => acpmAnimating.value = false, 600)
       }
     }

@@ -908,9 +908,6 @@ function closeConnexityModal() {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'%3E%3C/circle%3E%3Cpath d='M12 1v6m0 6v6'%3E%3C/path%3E%3Cpath d='M23 12h-6m-6 0H1'%3E%3C/path%3E%3C/svg%3E");
 }
 
-/* ...existing code... */
-
-/* ✅ MODIFICATION : Responsive pour le nouveau panneau */
 @media (max-width: 768px) {
   .trip-info-panel {
     grid-template-columns: 1fr;
