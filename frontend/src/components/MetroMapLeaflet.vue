@@ -142,9 +142,9 @@
           </div>
         </l-tooltip>
         <l-icon
-          :icon-url="getIconUrl(station)"
-          :icon-size="[28, 28]"
-          :icon-anchor="[14, 14]"
+          :icon-url="getIconUrl(station, iconSize)"
+          :icon-size="[iconSize, iconSize]"
+          :icon-anchor="[iconSize/2, iconSize/2]"
         />
       </l-marker>
       <l-polyline
@@ -214,7 +214,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, inject, watch } from 'vue'
+import { ref, onMounted, inject, watch, computed } from 'vue'
 import { LMap, LMarker, LTooltip, LIcon, LPolyline, LImageOverlay, LTileLayer } from '@vue-leaflet/vue-leaflet'
 import 'leaflet/dist/leaflet.css'
 import L from 'leaflet'
@@ -475,22 +475,32 @@ function getStationType(station) {
   return 'simple';
 }
 
-function getIconUrl(station) {
+function getIconUrl(station, size = 28) {
   const line = Array.isArray(station.lines) && station.lines.length > 0 ? station.lines[0] : '1';
   const color = LINE_COLORS[line] || '#1976d2';
-  let radius = 7, stroke = 3, glow = '', fill = color, strokeColor = 'white';
-  // Détection du type de station
+  
+  // Adapter les proportions selon la taille
+  const baseSize = 28;
+  const ratio = size / baseSize;
+  
+  let radius = Math.round(7 * ratio);
+  let stroke = Math.round(3 * ratio);
+  let glow = '';
+  let fill = color;
+  let strokeColor = 'white';
+  
+  // Détection du type de station avec proportions adaptées
   if (station.lines && station.lines.length > 1) {
-    radius = 7; stroke = 3; // même taille que les stations simples
-    fill = '#fff'; // correspondance = point blanc
-    strokeColor = 'black'; // contour noir pour correspondance
-    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='3' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
+    fill = '#fff';
+    strokeColor = 'black';
+    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='${3 * ratio}' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
   } else if (station.isTerminus || station.terminus) {
-    radius = 12; stroke = 5;
-    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='4' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
+    radius = Math.round(12 * ratio);
+    stroke = Math.round(5 * ratio);
+    glow = `<filter id='glow' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='${4 * ratio}' result='coloredBlur'/><feMerge><feMergeNode in='coloredBlur'/><feMergeNode in='SourceGraphic'/></feMerge></filter>`;
   }
-  // Encodage du SVG, attention au # dans filter
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'>${glow}<circle cx='14' cy='14' r='${radius}' fill='${fill}' stroke='${strokeColor}' stroke-width='${stroke}'${glow ? " filter='url(%23glow)'" : ''}/></svg>`;
+  
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>${glow}<circle cx='${size/2}' cy='${size/2}' r='${radius}' fill='${fill}' stroke='${strokeColor}' stroke-width='${stroke}'${glow ? " filter='url(%23glow)'" : ''}/></svg>`;
   return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
 }
 
@@ -668,6 +678,18 @@ function formatSecondsToHMS(seconds) {
     String(s).padStart(2, '0')
   ].filter(Boolean).join(':');
 }
+
+// Computed property pour la taille des icônes selon le zoom
+const iconSize = computed(() => {
+  const minSize = 12;  // Taille minimale
+  const maxSize = 32;  // Taille maximale
+  const minZoom = 10;  // Zoom minimum
+  const maxZoom = 16;  // Zoom maximum
+  
+  // Interpolation linéaire entre min et max
+  const normalizedZoom = Math.max(0, Math.min(1, (zoom.value - minZoom) / (maxZoom - minZoom)));
+  return Math.round(minSize + (maxSize - minSize) * normalizedZoom);
+});
 
 watch(acpmTotalWeight, (newVal) => {
   if (typeof newVal === 'number' && newVal > 0) {
