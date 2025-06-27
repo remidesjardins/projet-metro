@@ -61,7 +61,7 @@
             :class="{ 'active': showACPM }"
             class="acpm-button"
           >
-            {{ showACPM ? 'Hide ACPM' : 'Display ACPM' }}
+            {{ showACPM ? 'Masquer ACPM' : 'Afficher ACPM' }}
           </button>
           <transition name="fade-scale">
             <div v-if="showACPM && acpmTotalWeight !== null" class="acpm-refined-badge-wrap">
@@ -91,7 +91,11 @@
           <button class="acpm-button secondary" @click="handleTestConnexity" style="margin-top:8px;">
             Tester la connexité
           </button>
-          <button class="acpm-button secondary" @click="toggleLines" style="margin-top:8px;">
+          <button 
+            class="acpm-button secondary" 
+            @click="toggleLines" 
+            style="margin-top:8px;"
+          >
             {{ showLines ? 'Masquer les lignes' : 'Afficher les lignes' }}
           </button>
         </div>
@@ -115,7 +119,7 @@
 
       <!-- Tracé des lignes de métro -->
       <l-polyline
-        v-if="showLines"
+        v-if="showLines && !showACPM"
         v-for="(line, idx) in linesPolylines"
         :key="'line-polyline-' + line.line"
         :lat-lngs="line.path"
@@ -148,12 +152,15 @@
         />
       </l-marker>
       <l-polyline
+        v-if="showACPM && !showLines"
         v-for="(path, index) in acpmPath"
         :key="'acpm-' + index"
         :lat-lngs="path.path"
         :color="path.color"
         :weight="path.weight || 5"
         :opacity="path.opacity || 0.9"
+        :line-cap="path.lineCap"
+        :line-join="path.lineJoin"
       />
       <l-polyline
         v-if="shortestPath.length > 0"
@@ -358,13 +365,9 @@ async function fetchACPM() {
       const toStation = stations.value.find(s => s.name === edge.to.name)
 
       if (fromStation && toStation && fromStation.position && toStation.position) {
-        // Déterminer la ligne - utiliser la ligne de la première station
-        const line = fromStation.line || '1'
-        const color = LINE_COLORS[line] || '#000000'
-
         const path = {
           path: [getLatLng(fromStation), getLatLng(toStation)],
-          color: color,
+          color: '#000000',
           weight: 5,
           opacity: 1,
           lineCap: 'round',
@@ -433,9 +436,12 @@ function selectStationFromSearch(station, isStart) {
 function toggleACPM() {
   showACPM.value = !showACPM.value
   if (showACPM.value) {
+    showLines.value = false
+    linesPolylines.value = []
     fetchACPM()
   } else {
     acpmPath.value = []
+    acpmTotalWeight.value = null
   }
 }
 
@@ -642,7 +648,10 @@ function closeConnexityModal() {
 function toggleLines() {
   showLines.value = !showLines.value
   if (showLines.value) {
+    showACPM.value = false
     computeLinesPolylines()
+  } else {
+    linesPolylines.value = []
   }
 }
 
