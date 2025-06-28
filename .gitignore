@@ -17,3 +17,4 @@ dist/
 backend/data/gtfs/stop_times.txt
 backend/data/cache/metro_graph.pkl
 backend/data/cache/metro_stats.json
+backend/data/cache/temporal/global_stop_times.pkl
