@@ -2,6 +2,21 @@ from utils.parser import load_data
 import heapq
 from typing import Dict, List, Tuple, Any
 
+def extract_weight(weight_data):
+    """
+    Extrait le poids numérique depuis le nouveau format de graphe.
+    Le nouveau format est [{'time': X, 'line': Y}] au lieu d'un simple entier.
+    """
+    if isinstance(weight_data, list) and len(weight_data) > 0:
+        if isinstance(weight_data[0], dict):
+            return weight_data[0]['time']
+        else:
+            return weight_data[0]
+    elif isinstance(weight_data, dict):
+        return weight_data.get('time', 0)
+    else:
+        return weight_data
+
 def dijkstra(graph, start, end):
     # Compatibilité : transformer la liste de tuples en dict si besoin
     def get_neighbors(node):
@@ -22,7 +37,9 @@ def dijkstra(graph, start, end):
         visited.add(current)
         for neighbor, weight in get_neighbors(current):
             if neighbor not in visited:
-                heapq.heappush(heap, (dist + weight, neighbor, path + [neighbor]))
+                # Extraire le poids numérique du nouveau format
+                numeric_weight = extract_weight(weight)
+                heapq.heappush(heap, (dist + numeric_weight, neighbor, path + [neighbor]))
     return float('inf'), []
 
 def print_path(path, stations):

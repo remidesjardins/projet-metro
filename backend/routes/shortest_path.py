@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request
+from flask_cors import cross_origin
 from services.dijkstra import dijkstra
 from utils.parser import load_data
 from collections import OrderedDict
@@ -7,6 +8,7 @@ import math
 shortest_path_bp = Blueprint('shortest_path', __name__)
 
 @shortest_path_bp.route('/shortest-path', methods=['POST'])
+@cross_origin()
 def get_shortest_path():
     """Calcule le plus court chemin entre deux stations."""
     data = request.get_json()
