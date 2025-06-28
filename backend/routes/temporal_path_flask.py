@@ -1,0 +1,391 @@
+from flask import Blueprint, request, jsonify
+from datetime import datetime, date, timedelta
+import logging
+import json
+
+from services.temporal_path import TemporalPathService, TemporalPath, TemporalSegment
+from services.graph_service import GraphService
+from services.gtfs_temporal import GTFSemporalService
+from utils.data_manager import DataManager
+from utils.co2 import calculate_emissions_from_segments
+from config import Config
+
+logger = logging.getLogger(__name__)
+
+temporal_bp = Blueprint('temporal', __name__, url_prefix='/temporal')
+
+# Initialisation des services (à faire une seule fois)
+_temporal_service = None
+_graph_service = None
+_gtfs_service = None
+
+
+def get_services():
+    """Initialise et retourne les services nécessaires"""
+    global _temporal_service, _graph_service, _gtfs_service
+    
+    if _temporal_service is None:
+        try:
+            # Charger les données
+            graph, positions, stations = DataManager.get_data()
+            
+            # Initialiser les services
+            _graph_service = GraphService(graph, stations)
+            _gtfs_service = GTFSemporalService("data/gtfs")
+            _temporal_service = TemporalPathService(_graph_service, _gtfs_service)
+            
+            logger.info("Services temporels initialisés avec succès")
+        except Exception as e:
+            logger.error(f"Erreur lors de l'initialisation des services temporels: {e}")
+            raise
+    
+    return _temporal_service, _graph_service, _gtfs_service
+
+@temporal_bp.route('/path', methods=['POST'])
+def get_temporal_path():
+    """
+    Calcule le chemin temporel optimal entre deux stations
+    
+    Body JSON:
+    {
+        "start_station": "Châtelet",
+        "end_station": "Bastille", 
+        "departure_time": "08:30",
+        "date": "2024-01-15",  // optionnel
+        "max_paths": 3,        // optionnel
+        "max_wait_time": 1800  // optionnel (30 min en secondes)
+    }
+    """
+    try:
+        data = request.get_json()
+        logger.info(f"[TEMPORAL_PATH] Requête reçue: {data}")
+        
+        if not data:
+            logger.warning("[TEMPORAL_PATH] Données JSON manquantes")
+            return jsonify({"error": "Données JSON requises"}), 400
+        
+        # Validation des paramètres requis
+        required_fields = ['start_station', 'end_station', 'departure_time']
+        for field in required_fields:
+            if field not in data:
+                logger.warning(f"[TEMPORAL_PATH] Champ requis manquant: {field}")
+                return jsonify({"error": f"Champ requis manquant: {field}"}), 400
+        
+        # Parser les paramètres
+        departure_time = parse_time_and_date(
+            data['departure_time'], 
+            data.get('date')
+        )
+        logger.info(f"[TEMPORAL_PATH] Paramètres: start={data['start_station']}, end={data['end_station']}, departure_time={departure_time}")
+        
+        max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
+        max_wait_time = data.get('max_wait_time', Config.TEMPORAL_DEFAULT_MAX_WAIT_TIME)
+        
+        # Obtenir les services
+        temporal_service, graph_service, _ = get_services()
+        
+        # Log les chemins structurels trouvés
+        structural_paths = graph_service.find_multiple_paths(
+            data['start_station'], data['end_station'], Config.TEMPORAL_MAX_STRUCTURAL_PATHS
+        )
+        logger.info(f"[TEMPORAL_PATH] Nombre de chemins structurels trouvés: {len(structural_paths)}")
+        if len(structural_paths) == 0:
+            logger.warning(f"[TEMPORAL_PATH] Aucun chemin structurel trouvé entre {data['start_station']} et {data['end_station']}")
+        
+        # Calculer le chemin optimal
+        path = temporal_service.find_optimal_temporal_path(
+            start_station=data['start_station'],
+            end_station=data['end_station'],
+            departure_time=departure_time,
+            max_structural_paths=Config.TEMPORAL_MAX_STRUCTURAL_PATHS,
+            max_wait_time=max_wait_time
+        )
+        
+        if not path:
+            # Vérifier si c'est un problème de disponibilité du service
+            service_info = temporal_service.check_service_availability(
+                data['start_station'], departure_time
+            )
+            
+            error_response = {
+                "error": f"Aucun chemin trouvé entre {data['start_station']} et {data['end_station']} pour l'heure {data['departure_time']}",
+                "service_info": {
+                    "is_service_available": service_info.is_service_available,
+                    "message": service_info.message,
+                    "first_departure": service_info.first_departure.strftime("%H:%M") if service_info.first_departure else None,
+                    "last_departure": service_info.last_departure.strftime("%H:%M") if service_info.last_departure else None,
+                    "suggested_departure": service_info.suggested_departure.strftime("%H:%M") if service_info.suggested_departure else None
+                }
+            }
+            
+            logger.warning(f"[TEMPORAL_PATH] {error_response['error']} - {service_info.message}")
+            return jsonify(error_response), 404
+        
+        # Convertir en format de réponse
+        response = convert_temporal_path_to_dict(path)
+        
+        # Log détaillé du chemin optimal envoyé au frontend
+        segments_info = [(s['from_station'], s['to_station'], s['line']) for s in response['segments']]
+        logger.info(f"[TEMPORAL_PATH] Chemin optimal envoyé au frontend: {segments_info}")
+        logger.info(f"[TEMPORAL_PATH] Durée totale: {response['total_duration']}s, Temps d'attente: {response['total_wait_time']}s")
+        
+        return jsonify(response)
+        
+    except ValueError as e:
+        logger.error(f"[TEMPORAL_PATH] Erreur de valeur: {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"[TEMPORAL_PATH] Erreur lors du calcul du chemin temporel: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+@temporal_bp.route('/alternatives', methods=['POST'])
+def get_alternative_paths():
+    """
+    Calcule plusieurs chemins alternatifs entre deux stations
+    
+    Body JSON: même format que /path
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({"error": "Données JSON requises"}), 400
+        
+        # Validation des paramètres requis
+        required_fields = ['start_station', 'end_station', 'departure_time']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Champ requis manquant: {field}"}), 400
+        
+        # Parser les paramètres
+        departure_time = parse_time_and_date(
+            data['departure_time'], 
+            data.get('date')
+        )
+        
+        max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
+        
+        # Obtenir les services
+        temporal_service, _, _ = get_services()
+        
+        # Calculer les chemins alternatifs
+        paths = temporal_service.find_alternative_paths(
+            start_station=data['start_station'],
+            end_station=data['end_station'],
+            departure_time=departure_time,
+            max_paths=max_paths
+        )
+        
+        if not paths:
+            return jsonify({
+                "error": f"Aucun chemin trouvé entre {data['start_station']} et {data['end_station']} pour l'heure {data['departure_time']}"
+            }), 404
+        
+        # Convertir en format de réponse
+        path_responses = [convert_temporal_path_to_dict(path) for path in paths]
+        
+        response = {
+            "paths": path_responses,
+            "request_info": {
+                "start_station": data['start_station'],
+                "end_station": data['end_station'],
+                "departure_time": data['departure_time'],
+                "date": data.get('date'),
+                "paths_count": len(path_responses)
+            }
+        }
+        
+        return jsonify(response)
+        
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Erreur lors du calcul des chemins alternatifs: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+@temporal_bp.route('/stations', methods=['GET'])
+def get_stations():
+    """Retourne la liste de toutes les stations disponibles"""
+    try:
+        _, graph_service, _ = get_services()
+        stations = graph_service.get_all_stations()
+        return jsonify({"stations": sorted(stations)})
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des stations: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+@temporal_bp.route('/station/<station_name>/lines', methods=['GET'])
+def get_station_lines(station_name):
+    """Retourne les lignes qui desservent une station"""
+    try:
+        _, _, gtfs_service = get_services()
+        lines = gtfs_service.get_station_lines(station_name)
+        return jsonify({"station": station_name, "lines": lines})
+    except Exception as e:
+        logger.error(f"Erreur lors de la récupération des lignes: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+@temporal_bp.route('/next-departure', methods=['GET'])
+def get_next_departure():
+    """Trouve le prochain départ d'une ligne depuis une station"""
+    try:
+        # Récupérer les paramètres de requête
+        station = request.args.get('station')
+        line = request.args.get('line')
+        after_time = request.args.get('after_time')
+        
+        if not all([station, line, after_time]):
+            return jsonify({
+                "error": "Paramètres requis: station, line, after_time"
+            }), 400
+        
+        # Parser l'heure
+        after_datetime = parse_time_and_date(after_time)
+        
+        # Obtenir les services
+        _, _, gtfs_service = get_services()
+        
+        # Trouver le prochain départ
+        next_departure = gtfs_service.get_next_departure(station, line, after_datetime)
+        
+        if not next_departure:
+            return jsonify({
+                "station": station,
+                "line": line,
+                "after_time": after_time,
+                "next_departure": None,
+                "message": "Aucun départ trouvé"
+            })
+        
+        return jsonify({
+            "station": station,
+            "line": line,
+            "after_time": after_time,
+            "next_departure": next_departure.strftime("%H:%M:%S"),
+            "wait_time_minutes": int((next_departure - after_datetime).total_seconds() / 60)
+        })
+        
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"Erreur lors de la recherche du prochain départ: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
+def parse_time_and_date(time_str: str, date_str: str = None) -> datetime:
+    """Parse une heure et une date optionnelle, gère les heures après minuit (ex: 24:30, 01:15)"""
+    try:
+        # Parser l'heure
+        hour, minute = map(int, time_str.split(':'))
+        
+        # Validation des minutes
+        if not (0 <= minute <= 59):
+            raise ValueError("Minutes invalides (0-59)")
+        
+        # Utiliser la date fournie ou aujourd'hui
+        if date_str:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        else:
+            target_date = date.today()
+        
+        # Gérer les heures après minuit (comme dans GTFS)
+        if hour >= 24:
+            # Heures après minuit (24:30 = 00:30 du jour suivant)
+            hour_adjusted = hour - 24
+            target_date += timedelta(days=1)
+            logger.info(f"[TEMPORAL] Heure après minuit détectée: {hour}:{minute:02d} -> {hour_adjusted}:{minute:02d} du {target_date}")
+        else:
+            # Heures normales (0h-23h)
+            hour_adjusted = hour
+        
+        # Validation des heures ajustées
+        if not (0 <= hour_adjusted <= 23):
+            raise ValueError(f"Heure invalide après ajustement: {hour_adjusted}")
+        
+        result = datetime.combine(target_date, datetime.min.time()) + timedelta(hours=hour_adjusted, minutes=minute)
+        logger.info(f"[TEMPORAL] Heure parsée: {time_str} -> {result}")
+        return result
+        
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Format d'heure invalide: {time_str}. Utilisez le format HH:MM (ex: 08:30, 24:30 pour 00:30 du lendemain)")
+
+def convert_temporal_path_to_dict(path: TemporalPath) -> dict:
+    """Convertit un TemporalPath en dictionnaire JSON"""
+    segments = []
+    for segment in path.segments:
+        segments.append({
+            "from_station": segment.from_station,
+            "to_station": segment.to_station,
+            "line": segment.line,
+            "departure_time": segment.departure_time.strftime("%H:%M:%S"),
+            "arrival_time": segment.arrival_time.strftime("%H:%M:%S"),
+            "wait_time": segment.wait_time,
+            "travel_time": segment.travel_time,
+            "transfer_time": segment.transfer_time
+        })
+    response = {
+        "segments": segments,
+        "total_duration": path.total_duration,
+        "total_wait_time": path.total_wait_time,
+        "departure_time": path.departure_time.strftime("%H:%M:%S"),
+        "arrival_time": path.arrival_time.strftime("%H:%M:%S")
+    }
+    # Ajouter le chemin structurel si disponible
+    if path.structural_path:
+        response["structural_path"] = path.structural_path
+    # Ajout du calcul CO2
+    graph, positions, stations = DataManager.get_data()
+    response["emissions"] = calculate_emissions_from_segments(segments, stations, positions)
+    return response
+
+@temporal_bp.route('/transfer-test', methods=['POST'])
+def test_transfer():
+    """
+    Test de la logique de transfert entre lignes
+    
+    Body JSON:
+    {
+        "station": "Châtelet",
+        "from_line": "1",
+        "to_line": "14"
+    }
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'Données JSON requises'}), 400
+        
+        station = data.get('station')
+        from_line = data.get('from_line')
+        to_line = data.get('to_line')
+        
+        if not all([station, from_line, to_line]):
+            return jsonify({'error': 'station, from_line et to_line requis'}), 400
+        
+        # Obtenir les services
+        _, _, gtfs_service = get_services()
+        
+        # Calculer le temps de transfert
+        transfer_time = gtfs_service.get_transfer_time_between_lines(station, from_line, to_line)
+        
+        # Obtenir les informations de transfert pour la station
+        transfer_info = gtfs_service.transfer_service.get_station_transfer_info(station)
+        
+        response = {
+            'station': station,
+            'from_line': from_line,
+            'to_line': to_line,
+            'transfer_time_seconds': transfer_time,
+            'transfer_time_minutes': round(transfer_time / 60, 1),
+            'station_transfer_info': transfer_info,
+            'is_same_line': from_line == to_line,
+            'has_transfer': transfer_time > 0
+        }
+        
+        return jsonify(response)
+        
+    except Exception as e:
+        logger.error(f"Erreur lors du test de transfert: {e}")
+        return jsonify({'error': str(e)}), 500
+
+ 

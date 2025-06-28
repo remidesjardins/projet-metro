@@ -30,5 +30,35 @@ export const api = {
             throw new Error('Erreur lors du test de connexité')
         }
         return response.json()
+    },
+
+    async get(endpoint) {
+        const response = await fetch(`${API_URL}${endpoint}`)
+        if (!response.ok) {
+            throw new Error(`Erreur lors du GET ${endpoint}`)
+        }
+        return response.json()
+    },
+
+    async post(endpoint, data) {
+        const response = await fetch(`${API_URL}${endpoint}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(data)
+        })
+        if (!response.ok) {
+            let errorData = null
+            try {
+                errorData = await response.json()
+            } catch {}
+            
+            // Créer une erreur avec les données détaillées
+            const error = new Error(errorData?.error || 'Erreur lors du POST ' + endpoint)
+            error.responseData = errorData // Conserver toutes les données de la réponse
+            throw error
+        }
+        return response.json()
     }
 }

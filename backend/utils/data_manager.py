@@ -134,7 +134,18 @@ class DataManager:
                         positions[neighbor_id] = (0, 0)
                 
                 neighbor_id = station_name_to_id[neighbor_name]
-                graph[station_id][neighbor_id] = weight
+                
+                # Préserver les informations de ligne dans le graphe
+                line = gtfs_lines.get(station_name, '1')
+                if neighbor_id not in graph[station_id]:
+                    graph[station_id][neighbor_id] = []
+                
+                # Ajouter la connexion avec les informations de ligne
+                connection = {
+                    'time': weight,
+                    'line': line
+                }
+                graph[station_id][neighbor_id].append(connection)
         
         # Correction manuelle de la topologie de la 7B (relations exactes)
         def find_station_id(nom, ligne):
@@ -155,19 +166,35 @@ class DataManager:
                 del graph[b][a]
         # Ajouter Botzaris <-> Place des Fêtes <-> Pré-Saint-Gervais
         if id_botz and id_place:
-            graph[id_botz][id_place] = 60
-            graph[id_place][id_botz] = 60
+            if id_place not in graph[id_botz]:
+                graph[id_botz][id_place] = []
+            if id_botz not in graph[id_place]:
+                graph[id_place][id_botz] = []
+            graph[id_botz][id_place].append({'time': 60, 'line': '7B'})
+            graph[id_place][id_botz].append({'time': 60, 'line': '7B'})
         if id_place and id_pre:
-            graph[id_place][id_pre] = 60
-            graph[id_pre][id_place] = 60
+            if id_pre not in graph[id_place]:
+                graph[id_place][id_pre] = []
+            if id_place not in graph[id_pre]:
+                graph[id_pre][id_place] = []
+            graph[id_place][id_pre].append({'time': 60, 'line': '7B'})
+            graph[id_pre][id_place].append({'time': 60, 'line': '7B'})
         # Ajouter Pré-Saint-Gervais <-> Danube <-> Botzaris
         if id_pre and id_danube:
-            graph[id_pre][id_danube] = 60
-            graph[id_danube][id_pre] = 60
+            if id_danube not in graph[id_pre]:
+                graph[id_pre][id_danube] = []
+            if id_pre not in graph[id_danube]:
+                graph[id_danube][id_pre] = []
+            graph[id_pre][id_danube].append({'time': 60, 'line': '7B'})
+            graph[id_danube][id_pre].append({'time': 60, 'line': '7B'})
         # FORCER le lien Danube <-> Botzaris à la toute fin
         if id_danube and id_botz:
-            graph[id_danube][id_botz] = 60
-            graph[id_botz][id_danube] = 60
+            if id_botz not in graph[id_danube]:
+                graph[id_danube][id_botz] = []
+            if id_danube not in graph[id_botz]:
+                graph[id_botz][id_danube] = []
+            graph[id_danube][id_botz].append({'time': 60, 'line': '7B'})
+            graph[id_botz][id_danube].append({'time': 60, 'line': '7B'})
         
         return graph, positions, stations
     

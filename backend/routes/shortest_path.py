@@ -13,7 +13,7 @@ def get_shortest_path():
     
     if not data or 'start' not in data or 'end' not in data:
         return jsonify({
-            'error': 'Missing required parameters: start and end station IDs'
+            'error': 'Paramètres requis manquants : IDs des stations de départ et d\'arrivée'
         }), 400
     
     start_id = data['start']
@@ -24,7 +24,7 @@ def get_shortest_path():
     # Vérifier que les stations existent
     if start_id not in stations or end_id not in stations:
         return jsonify({
-            'error': 'Invalid station ID(s)'
+            'error': 'ID(s) de station invalide(s)'
         }), 400
     
     # Calculer le plus court chemin
@@ -32,7 +32,7 @@ def get_shortest_path():
     
     if not path:
         return jsonify({
-            'error': 'No path found between the specified stations'
+            'error': 'Aucun chemin trouvé entre les stations spécifiées'
         }), 404
     
     # Fonction pour calculer la distance entre deux points GPS (en km)

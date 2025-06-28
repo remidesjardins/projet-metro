@@ -1,10 +1,12 @@
 from flask import Blueprint, jsonify
+from flask_cors import cross_origin
 from services.kruskal import kruskal_mst
 from utils.parser import load_data
 
 acpm_bp = Blueprint('acpm', __name__)
 
 @acpm_bp.route('/acpm', methods=['GET'])
+@cross_origin()
 def get_mst():
     """Retourne l'arbre couvrant de poids minimal (ACPM) calculé par Kruskal."""
     graph, positions, stations = load_data()
@@ -13,8 +15,16 @@ def get_mst():
     edges = []
     seen = set()
     for s1 in graph:
-        for s2, weight in graph[s1].items():
+        for s2, weight_data in graph[s1].items():
             if (s2, s1) not in seen:
+                # Extraire le poids selon le nouveau format
+                if isinstance(weight_data, list) and len(weight_data) > 0:
+                    weight = weight_data[0]['time'] if isinstance(weight_data[0], dict) else weight_data[0]
+                elif isinstance(weight_data, dict):
+                    weight = weight_data.get('time', weight_data)
+                else:
+                    weight = weight_data
+                
                 edges.append((weight, s1, s2))
                 seen.add((s1, s2))
     
@@ -46,6 +56,9 @@ def get_mst():
     
     for weight, s1, s2 in edges:
         if union(s1, s2):
+            # S'assurer que le poids est un nombre
+            numeric_weight = weight if isinstance(weight, (int, float)) else int(weight)
+            
             mst.append({
                 'from': {
                     'id': s1,
@@ -55,9 +68,9 @@ def get_mst():
                     'id': s2,
                     'name': stations[s2]['name']
                 },
-                'weight': weight
+                'weight': numeric_weight
             })
-            total_weight += weight
+            total_weight += numeric_weight
             if len(mst) == len(graph) - 1:
                 break
     

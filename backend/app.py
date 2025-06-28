@@ -7,6 +7,7 @@ from routes.acpm import acpm_bp
 from routes.shortest_path import shortest_path_bp
 from routes.itineraire import itineraire_bp
 from routes.cache import cache_bp
+from routes.temporal_path_flask import temporal_bp
 
 app = Flask(__name__)
 
@@ -31,13 +32,14 @@ app.register_blueprint(acpm_bp)
 app.register_blueprint(shortest_path_bp)
 app.register_blueprint(itineraire_bp)
 app.register_blueprint(cache_bp)
+app.register_blueprint(temporal_bp)
 
 @app.route('/')
 def index():
     """Page d'accueil de l'API."""
     return {
         'name': 'Paris Metro API',
-        'version': '1.0',
+        'version': '3.0',
         'endpoints': {
             'GET /stations': 'Liste des stations avec coordonnées',
             'GET /graph': 'Graphe complet du métro',
@@ -49,7 +51,12 @@ def index():
             'GET /cache/info': 'Informations sur l\'état du cache',
             'POST /cache/clear': 'Effacer le cache',
             'POST /cache/reload': 'Recharger les données depuis GTFS',
-            'GET /performance/test': 'Test de performance'
+            'GET /performance/test': 'Test de performance',
+            'POST /temporal/path': 'Chemin temporel optimal avec horaires',
+            'POST /temporal/alternatives': 'Chemins alternatifs temporels',
+            'GET /temporal/stations': 'Liste des stations pour calculs temporels',
+            'GET /temporal/station/{station}/lines': 'Lignes desservant une station',
+            'GET /temporal/next-departure': 'Prochain départ d\'une ligne'
         }
     }
 
