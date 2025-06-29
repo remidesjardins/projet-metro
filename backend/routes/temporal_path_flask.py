@@ -309,10 +309,11 @@ def parse_time_and_date(time_str: str, date_str: str = None) -> datetime:
         raise ValueError(f"Format d'heure invalide: {time_str}. Utilisez le format HH:MM (ex: 08:30, 24:30 pour 00:30 du lendemain)")
 
 def convert_temporal_path_to_dict(path: TemporalPath) -> dict:
-    """Convertit un TemporalPath en dictionnaire JSON"""
-    segments = []
+    """Convertit un TemporalPath en dictionnaire JSON avec regroupement par ligne"""
+    # Créer les segments individuels d'abord
+    raw_segments = []
     for segment in path.segments:
-        segments.append({
+        raw_segments.append({
             "from_station": segment.from_station,
             "to_station": segment.to_station,
             "line": segment.line,
@@ -322,8 +323,12 @@ def convert_temporal_path_to_dict(path: TemporalPath) -> dict:
             "travel_time": segment.travel_time,
             "transfer_time": segment.transfer_time
         })
+    
+    # Regrouper les segments par ligne
+    grouped_segments = group_segments_by_line(raw_segments)
+    
     response = {
-        "segments": segments,
+        "segments": grouped_segments,
         "total_duration": path.total_duration,
         "total_wait_time": path.total_wait_time,
         "departure_time": path.departure_time.strftime("%H:%M:%S"),
@@ -334,8 +339,64 @@ def convert_temporal_path_to_dict(path: TemporalPath) -> dict:
         response["structural_path"] = path.structural_path
     # Ajout du calcul CO2
     graph, positions, stations = DataManager.get_data()
-    response["emissions"] = calculate_emissions_from_segments(segments, stations, positions)
+    response["emissions"] = calculate_emissions_from_segments(grouped_segments, stations, positions)
     return response
+
+def group_segments_by_line(segments: list) -> list:
+    """Regroupe les segments consécutifs de la même ligne"""
+    if not segments:
+        return []
+    
+    grouped = []
+    current_group = [segments[0]]
+    current_line = segments[0]['line']
+    
+    for i in range(1, len(segments)):
+        segment = segments[i]
+        
+        # Si même ligne et pas de transfert, regrouper
+        if segment['line'] == current_line and segment['transfer_time'] == 0:
+            current_group.append(segment)
+        else:
+            # Finaliser le groupe actuel
+            if len(current_group) > 1:
+                # Créer un segment regroupé
+                grouped_segment = {
+                    "from_station": current_group[0]['from_station'],
+                    "to_station": current_group[-1]['to_station'],
+                    "line": current_line,
+                    "departure_time": current_group[0]['departure_time'],
+                    "arrival_time": current_group[-1]['arrival_time'],
+                    "wait_time": current_group[0]['wait_time'],
+                    "travel_time": sum(s['travel_time'] for s in current_group),
+                    "transfer_time": current_group[0]['transfer_time']
+                }
+                grouped.append(grouped_segment)
+            else:
+                # Garder le segment seul
+                grouped.append(current_group[0])
+            
+            # Commencer un nouveau groupe
+            current_group = [segment]
+            current_line = segment['line']
+    
+    # Finaliser le dernier groupe
+    if len(current_group) > 1:
+        grouped_segment = {
+            "from_station": current_group[0]['from_station'],
+            "to_station": current_group[-1]['to_station'],
+            "line": current_line,
+            "departure_time": current_group[0]['departure_time'],
+            "arrival_time": current_group[-1]['arrival_time'],
+            "wait_time": current_group[0]['wait_time'],
+            "travel_time": sum(s['travel_time'] for s in current_group),
+            "transfer_time": current_group[0]['transfer_time']
+        }
+        grouped.append(grouped_segment)
+    else:
+        grouped.append(current_group[0])
+    
+    return grouped
 
 @temporal_bp.route('/transfer-test', methods=['POST'])
 def test_transfer():

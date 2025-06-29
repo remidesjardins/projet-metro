@@ -53,6 +53,7 @@ class DataManager:
         
         instance._data = instance._load_from_gtfs()
         instance._save_to_cache()
+        instance._cache_loaded = True
         
         load_time = time.time() - start_time
         logger.info(f"Données GTFS chargées et mises en cache en {load_time:.3f}s")

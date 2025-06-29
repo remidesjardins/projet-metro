@@ -18,3 +18,6 @@ backend/data/gtfs/stop_times.txt
 backend/data/cache/metro_graph.pkl
 backend/data/cache/metro_stats.json
 backend/data/cache/temporal/global_stop_times.pkl
+
+# Cache temporal - fichiers générés automatiquement
+backend/data/cache/temporal/*.pkl

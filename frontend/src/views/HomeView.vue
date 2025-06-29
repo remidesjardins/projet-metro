@@ -557,7 +557,7 @@ async function findPath() {
         let currentLine = null;
         let currentStations = [];
         let currentDuration = 0;
-        let currentStationTimes = [];
+        let currentStationTimes = {};
         let currentTransferInfo = null;
         
         // Utiliser le chemin structurel depuis la réponse API pour obtenir toutes les stations
@@ -572,17 +572,10 @@ async function findPath() {
             // Récupérer toutes les stations de cette ligne depuis le chemin structurel
             currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
             currentDuration = segment.travel_time;
-            currentStationTimes = [{
-              station: segment.from_station,
-              departure_time: segment.departure_time,
-              arrival_time: null,
-              wait_time: segment.wait_time
-            }, {
-              station: segment.to_station,
-              departure_time: null,
-              arrival_time: segment.arrival_time,
-              wait_time: 0
-            }];
+            
+            // Créer les horaires pour toutes les stations de ce segment
+            currentStationTimes = createStationTimesForSegment(currentStations, segment);
+            
           } else if (segment.line === currentLine) {
             // Même ligne, ajouter les stations intermédiaires et mettre à jour la durée
             const additionalStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
@@ -597,13 +590,9 @@ async function findPath() {
             // Mettre à jour la durée totale
             currentDuration += segment.travel_time;
             
-            // Mettre à jour les horaires
-            currentStationTimes.push({
-              station: segment.to_station,
-              departure_time: null,
-              arrival_time: segment.arrival_time,
-              wait_time: 0
-            });
+            // Mettre à jour les horaires pour les nouvelles stations
+            currentStationTimes = updateStationTimes(currentStationTimes, segment);
+            
           } else {
             // Changement de ligne, finaliser le segment précédent
             segments.push({
@@ -626,17 +615,9 @@ async function findPath() {
               toLine: segment.line
             };
             currentDuration = segment.travel_time;
-            currentStationTimes = [{
-              station: segment.from_station,
-              departure_time: segment.departure_time,
-              arrival_time: null,
-              wait_time: segment.wait_time
-            }, {
-              station: segment.to_station,
-              departure_time: null,
-              arrival_time: segment.arrival_time,
-              wait_time: 0
-            }];
+            
+            // Créer les horaires pour le nouveau segment
+            currentStationTimes = createStationTimesForSegment(currentStations, segment);
           }
         }
         
@@ -3342,9 +3323,9 @@ div[style*="top: var(--spacing-xl)"] {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2v6m0 6v6'%3E%3C/path%3E%3Cpath d='M23 12h-6m-6 0H1'%3E%3C/path%3E%3C/svg%3E");
   background-size: contain;
   opacity: 0.8;
-  }
-  
-  .segment-times {
+}
+
+.segment-times {
   display: flex;
   align-items: center;
   gap: var(--spacing-xs);
