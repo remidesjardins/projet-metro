@@ -26,6 +26,10 @@ class GTFSemporalService:
         self.stop_times_cache = {}
         self.stop_times_loaded = False
         
+        # NOUVEAU : Cache des temps de trajet réels entre stations
+        self.travel_time_cache = {}
+        self.travel_time_cache_loaded = False
+        
         # Service de transfert (NOUVEAU)
         self.transfer_service = TransferService(gtfs_dir)
         
@@ -104,8 +108,14 @@ class GTFSemporalService:
         stop_times_time = time.time() - stop_times_start
         logger.info(f"Stop_times cache chargé en {stop_times_time:.3f}s")
         
+        # NOUVEAU : Charger le cache des temps de trajet
+        travel_time_start = time.time()
+        self._load_travel_time_cache()
+        travel_time_time = time.time() - travel_time_start
+        logger.info(f"Travel time cache chargé en {travel_time_time:.3f}s")
+        
         total_time = time.time() - start_time
-        logger.info(f"Données GTFS temporelles chargées en {total_time:.3f}s (routes: {routes_time:.3f}s, trips: {trips_time:.3f}s, stops: {stops_time:.3f}s, transfers: {transfers_time:.3f}s, stop_times: {stop_times_time:.3f}s)")
+        logger.info(f"Données GTFS temporelles chargées en {total_time:.3f}s (routes: {routes_time:.3f}s, trips: {trips_time:.3f}s, stops: {stops_time:.3f}s, transfers: {transfers_time:.3f}s, stop_times: {stop_times_time:.3f}s, travel_times: {travel_time_time:.3f}s)")
     
     def _load_stop_times_cache(self):
         """Charge le cache global des stop_times pour éviter les relectures"""
@@ -463,4 +473,90 @@ class GTFSemporalService:
         for cache_file in self.cache_dir.glob("*.pkl"):
             cache_file.unlink()
         
-        logger.info("Cache des horaires vidé") 
+        logger.info("Cache des horaires vidé")
+    
+    def _load_travel_time_cache(self):
+        """Charge le cache des temps de trajet réels entre stations"""
+        if self.travel_time_cache_loaded:
+            return
+            
+        cache_file = self.cache_dir / 'travel_times_cache.pkl'
+        
+        # Essayer de charger depuis le cache
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'rb') as f:
+                    self.travel_time_cache = pickle.load(f)
+                self.travel_time_cache_loaded = True
+                logger.info(f"[GTFS] Cache des temps de trajet chargé: {len(self.travel_time_cache)} entrées")
+                return
+            except Exception as e:
+                logger.warning(f"[GTFS] Erreur lors du chargement du cache des temps de trajet: {e}")
+        
+        # Pré-calculer les temps de trajet pour toutes les paires de stations sur chaque ligne
+        logger.info("[GTFS] Pré-calcul des temps de trajet entre stations...")
+        
+        for line_name, route_ids in self.route_name_to_ids.items():
+            logger.info(f"[GTFS] Calcul des temps pour la ligne {line_name}...")
+            
+            # Obtenir tous les trips de cette ligne
+            trips = self.trips_df[self.trips_df['route_id'].isin(route_ids)]['trip_id'].tolist()
+            
+            for trip_id in trips[:10]:  # Limiter à 10 trips par ligne pour les performances
+                stops = self.stop_times_cache.get(trip_id, [])
+                if len(stops) < 2:
+                    continue
+                
+                # Calculer les temps entre toutes les paires de stations de ce trip
+                for i in range(len(stops)):
+                    for j in range(i + 1, len(stops)):
+                        stop_a = stops[i]
+                        stop_b = stops[j]
+                        
+                        # Obtenir les noms des stations
+                        station_a = self.stop_id_to_name.get(stop_a['stop_id'])
+                        station_b = self.stop_id_to_name.get(stop_b['stop_id'])
+                        
+                        if not station_a or not station_b:
+                            continue
+                        
+                        # Calculer le temps de trajet
+                        dep_time = self._parse_gtfs_time(stop_a['departure_time'], date.today())
+                        arr_time = self._parse_gtfs_time(stop_b['arrival_time'], date.today())
+                        travel_time = int((arr_time - dep_time).total_seconds())
+                        
+                        # Stocker dans le cache
+                        cache_key = (station_a, station_b, line_name)
+                        if cache_key not in self.travel_time_cache:
+                            self.travel_time_cache[cache_key] = []
+                        self.travel_time_cache[cache_key].append(travel_time)
+        
+        # Prendre le temps médian pour chaque paire
+        for key, times in self.travel_time_cache.items():
+            if times:
+                self.travel_time_cache[key] = sorted(times)[len(times)//2]  # Médiane
+        
+        # Sauvegarder en cache
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(self.travel_time_cache, f)
+            logger.info(f"[GTFS] Cache des temps de trajet sauvegardé: {len(self.travel_time_cache)} entrées")
+        except Exception as e:
+            logger.warning(f"[GTFS] Erreur lors de la sauvegarde du cache des temps de trajet: {e}")
+        
+        self.travel_time_cache_loaded = True
+    
+    def get_travel_time(self, from_station: str, to_station: str, line: str) -> Optional[int]:
+        """
+        Récupère le temps de trajet entre deux stations sur une ligne donnée
+        
+        Args:
+            from_station: Station de départ
+            to_station: Station d'arrivée
+            line: Ligne de métro
+        
+        Returns:
+            Temps de trajet en secondes ou None si non trouvé
+        """
+        cache_key = (from_station, to_station, line)
+        return self.travel_time_cache.get(cache_key) 

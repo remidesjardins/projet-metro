@@ -1,3 +1,10 @@
+"""
+Module de parsing des données du métro parisien.
+
+Ce module gère le chargement et le parsing des données GTFS (General Transit Feed Specification)
+pour créer les structures de données nécessaires aux algorithmes de calcul d'itinéraires.
+"""
+
 import logging
 from typing import Dict, Tuple, Any
 from pathlib import Path
@@ -20,6 +27,10 @@ def parse_metro_file(file_path: str) -> Tuple[Dict[str, Dict[str, Any]], Dict[st
         
     Returns:
         Tuple contenant (graph, stations)
+        
+    Raises:
+        FileNotFoundError: Si le fichier n'existe pas
+        Exception: En cas d'erreur de parsing
     """
     graph = {}
     stations = {}
@@ -31,8 +42,7 @@ def parse_metro_file(file_path: str) -> Tuple[Dict[str, Dict[str, Any]], Dict[st
                 if not line or line.startswith('#') or line.startswith('-'):
                     continue
                 if line.startswith('V'):
-                    # V 0000 Abbesses ;12 ;False 0
-                    # Séparer V et le reste
+                    # Format: V 0000 Abbesses ;12 ;False 0
                     parts = line.split(' ', 2)
                     if len(parts) < 3:
                         continue
@@ -63,7 +73,7 @@ def parse_metro_file(file_path: str) -> Tuple[Dict[str, Dict[str, Any]], Dict[st
                     }
                     graph[station_id] = {}
                 elif line.startswith('E'):
-                    # E 0 238 41
+                    # Format: E 0 238 41
                     parts = line.split()
                     if len(parts) != 4:
                         continue
@@ -87,6 +97,13 @@ def parse_pospoints_file(file_path: str, stations: Dict[str, Dict]) -> Dict[str,
     """
     Parse le fichier pospoints.txt et retourne un dictionnaire des positions des stations.
     Réutilise les positions pour les stations de correspondance.
+    
+    Args:
+        file_path: Chemin vers le fichier pospoints.txt
+        stations: Dictionnaire des stations existantes
+        
+    Returns:
+        Dictionnaire {station_id: (x, y)} des positions
     """
     positions = {}
     station_name_to_ids = {}
@@ -157,6 +174,9 @@ def load_data() -> Tuple[Dict[str, Dict[str, int]], Dict[str, Tuple[int, int]], 
     """
     Charge les données du métro en utilisant le DataManager pour optimiser les performances.
     Les données sont mises en cache et rechargées seulement si nécessaire.
+    
+    Returns:
+        Tuple contenant (graph, positions, stations)
     """
     return DataManager.get_data()
 
@@ -166,10 +186,6 @@ if __name__ == '__main__':
     
     # Affichage d'un exemple de station
     first_station_id = next(iter(stations))
-    print(f"ID: {first_station_id}")
-    print(f"Données: {stations[first_station_id]}")
-    print(f"Position: {positions.get(first_station_id, 'Non trouvée')}")
-    print(f"Voisins: {graph[first_station_id]}")
     
     # Statistiques générales
     print(f"Nombre total de stations : {len(stations)}")

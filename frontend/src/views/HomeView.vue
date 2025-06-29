@@ -41,11 +41,6 @@ const acpmTotalWeight = ref(null)
 const showLines = ref(false)
 const linesPolylines = ref([])
 
-// Debugging
-watch(showLines, (newValue) => {
-  console.log('[HomeView] showLines changé:', newValue)
-})
-
 // Mapping des couleurs pour les lignes de métro avec saturation augmentée pour meilleur contraste
 const LINE_COLORS = {
   '1': '#FFCE00',  // Jaune - ligne 1
@@ -237,16 +232,16 @@ onMounted(() => {
 
 onMounted(async () => {
   try {
-    console.log('Chargement des stations...')
+    // console.log('Chargement des stations...')
     const res = await api.getStationsList()
-    console.log('Résultat API:', res)
+    // console.log('Résultat API:', res)
     allStations.value = res.stations
-    console.log('Stations chargées:', allStations.value.length)
+    // console.log('Stations chargées:', allStations.value.length)
     // Création d'une map nom -> lignes
     stationLinesMap.value = Object.fromEntries(
       res.stations.map(s => [s.name, s.lines])
     )
-    console.log('Map des lignes créée:', Object.keys(stationLinesMap.value).length)
+    // console.log('Map des lignes créée:', Object.keys(stationLinesMap.value).length)
   } catch (e) {
     console.error('Erreur lors du chargement des stations:', e)
     allStations.value = []
@@ -255,8 +250,8 @@ onMounted(async () => {
 })
 
 function handleStartStationInput() {
-  console.log('handleStartStationInput appelé avec:', startStation.value)
-  console.log('allStations disponibles:', allStations.value.length)
+  // console.log('handleStartStationInput appelé avec:', startStation.value)
+  // console.log('allStations disponibles:', allStations.value.length)
   
   // Annuler le debounce précédent
   if (startStationDebounce.value) {
@@ -267,23 +262,23 @@ function handleStartStationInput() {
   startStationDebounce.value = setTimeout(() => {
     if (startStation.value.length < 2) {
       startStationSuggestions.value = [];
-      console.log('Texte trop court, suggestions vidées')
+      // console.log('Texte trop court, suggestions vidées')
       return;
     }
 
     const searchTerm = startStation.value.toLowerCase();
-    console.log('Recherche pour:', searchTerm)
+    // console.log('Recherche pour:', searchTerm)
     
     const filtered = allStations.value.filter(station => 
       station.name.toLowerCase().includes(searchTerm)
     )
-    console.log('Stations filtrées:', filtered.length)
+    // console.log('Stations filtrées:', filtered.length)
     
     startStationSuggestions.value = filtered
       .slice(0, 5)
       .map(station => station.name);
     
-    console.log('Suggestions finales:', startStationSuggestions.value)
+    // console.log('Suggestions finales:', startStationSuggestions.value)
   }, 300); // 300ms de délai
 }
 
@@ -317,7 +312,7 @@ function selectStartStation(stationName) {
   if (stationObj) {
     // L'API retourne un tableau d'IDs, prendre le premier
     startStationId.value = stationObj.ids && stationObj.ids.length > 0 ? stationObj.ids[0] : stationObj.id;
-    console.log('Station de départ sélectionnée:', stationName, 'ID:', startStationId.value, 'Station obj:', stationObj);
+    // console.log('Station de départ sélectionnée:', stationName, 'ID:', startStationId.value, 'Station obj:', stationObj);
   }
 }
 
@@ -330,7 +325,7 @@ function selectEndStation(stationName) {
   if (stationObj) {
     // L'API retourne un tableau d'IDs, prendre le premier
     endStationId.value = stationObj.ids && stationObj.ids.length > 0 ? stationObj.ids[0] : stationObj.id;
-    console.log('Station d\'arrivée sélectionnée:', stationName, 'ID:', endStationId.value, 'Station obj:', stationObj);
+    // console.log('Station d\'arrivée sélectionnée:', stationName, 'ID:', endStationId.value, 'Station obj:', stationObj);
   }
 }
 
@@ -343,19 +338,19 @@ function selectStationFromMap(station) {
     // Sélectionner comme station de départ
     startStation.value = station.name;
     startStationId.value = stationId;
-    console.log('Station de départ sélectionnée depuis la carte:', station.name, 'ID:', stationId);
+    // console.log('Station de départ sélectionnée depuis la carte:', station.name, 'ID:', stationId);
   } else if (!endStation.value && stationId !== startStationId.value) {
     // Sélectionner comme station d'arrivée
     endStation.value = station.name;
     endStationId.value = stationId;
-    console.log('Station d\'arrivée sélectionnée depuis la carte:', station.name, 'ID:', stationId);
+    // console.log('Station d\'arrivée sélectionnée depuis la carte:', station.name, 'ID:', stationId);
   } else {
     // Redémarrer la sélection
     startStation.value = station.name;
     startStationId.value = stationId;
     endStation.value = '';
     endStationId.value = '';
-    console.log('Nouvelle sélection depuis la carte:', station.name, 'ID:', stationId);
+    // console.log('Nouvelle sélection depuis la carte:', station.name, 'ID:', stationId);
   }
 }
 
@@ -369,125 +364,135 @@ function clearResults() {
 
 // Fonctions pour les outils avancés
 async function toggleACPM() {
+  console.log('toggleACPM appelé, showACPM actuel:', showACPM.value)
   showACPM.value = !showACPM.value
+  console.log('showACPM changé à:', showACPM.value)
   if (showACPM.value) {
+    console.log('Chargement de l\'ACPM...')
     await fetchACPM()
   } else {
+    console.log('Masquage de l\'ACPM')
     acpmPath.value = []
   }
 }
 
 async function fetchACPM() {
   try {
-    const res = await fetch('http://localhost:5050/acpm')
-    const data = await res.json()
+    const data = await api.get('/acpm')
     acpmTotalWeight.value = data.total_weight
     
     // Traiter les données ACPM pour l'affichage sur la carte
     console.log('Données ACPM chargées:', data)
     
     // Charger les stations pour pouvoir traiter l'ACPM
-    const stationsRes = await fetch('http://localhost:5050/stations', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include'
-    })
-    const stationsData = await stationsRes.json()
+    const stationsData = await api.getStationsList()
     const stations = stationsData.stations.filter(s => s.position && Array.isArray(s.position) && s.position.length === 2)
       .map(station => {
         const line = Array.isArray(station.lines) && station.lines.length > 0
           ? station.lines[0]
-          : '1';
+          : station.lines
         return {
-          ...station,
-          line: line
-        };
-      });
-
-    // Convertir les données ACPM au format attendu par la carte
-    acpmPath.value = data.mst.map(edge => {
-      const fromStation = stations.find(s => s.name === edge.from.name)
-      const toStation = stations.find(s => s.name === edge.to.name)
-
-      if (fromStation && toStation && fromStation.position && toStation.position) {
-        // Fonction pour convertir les coordonnées comme dans MetroMapLeaflet
-        const getLatLng = (station) => {
-          const [x, y] = station.position;
-          return [x/1000, y/1000];
+          id: station.ids && station.ids.length > 0 ? station.ids[0] : station.id,
+          name: station.name,
+          lines: station.lines,
+          position: station.position
         }
+      })
 
+    // Traiter les arêtes de l'ACPM
+    acpmPath.value = data.mst.map(edge => {
+      const fromStation = stations.find(s => s.id === edge.from.id)
+      const toStation = stations.find(s => s.id === edge.to.id)
+      
+      if (fromStation && toStation && fromStation.position && toStation.position) {
         return {
-          path: [getLatLng(fromStation), getLatLng(toStation)],
-          color: '#000000', // Forcer la couleur noire pour l'ACPM
+          path: [
+            [fromStation.position[1] / 1000, fromStation.position[0] / 1000],
+            [toStation.position[1] / 1000, toStation.position[0] / 1000]
+          ],
+          color: '#FF6B6B',
           weight: 4,
-          opacity: 0.8,
-          lineCap: 'round',
-          lineJoin: 'round'
+          opacity: 0.8
         }
       }
       return null
-    }).filter(path => path !== null)
+    }).filter(Boolean)
     
     console.log('Chemins ACPM traités:', acpmPath.value.length)
   } catch (error) {
-    console.error("Erreur lors du chargement de l'ACPM:", error)
-    acpmPath.value = []
-    acpmTotalWeight.value = null
+    console.error('Erreur lors du chargement de l\'ACPM:', error)
   }
 }
 
 async function toggleLines() {
   showLines.value = !showLines.value
-  console.log('Affichage des lignes:', showLines.value ? 'activé' : 'désactivé')
+  // console.log('Affichage des lignes:', showLines.value ? 'activé' : 'désactivé')
   
   if (showLines.value) {
-    console.log('Chargement des données de lignes en cours...')
-    await computeLinesPolylines()
+    // console.log('Chargement des données de lignes en cours...')
+    await fetchLines()
   } else {
-    console.log('Masquage des lignes')
+    // console.log('Masquage des lignes')
     linesPolylines.value = []
   }
 }
 
-async function computeLinesPolylines() {
+async function fetchLines() {
   try {
     console.log('Chargement des lignes depuis l\'API...')
-    const res = await fetch('http://localhost:5050/stations/ordered_by_line');
-    const data = await res.json();
+    const data = await api.get('/stations/ordered_by_line')
     console.log('Données de lignes reçues:', data)
     
-    // data: { ligne: [ [branche1], [branche2], ... ] }
-    linesPolylines.value = [];
+    // Traiter les données de lignes
+    // data est un objet avec des clés de lignes (ex: "1", "2", etc.) et des valeurs qui sont des tableaux de branches
+    linesPolylines.value = []
+    
     Object.entries(data).forEach(([line, branches]) => {
-      branches.forEach(branch => {
-        linesPolylines.value.push({
-          line,
-          color: LINE_COLORS[line] || '#000',
-          path: branch.map(s => [s.position[0] / 1000, s.position[1] / 1000]),
-        });
-      });
-    });
+      console.log(`Traitement de la ligne ${line} avec ${branches.length} branches`)
+      
+      // Traiter chaque branche de la ligne
+      branches.forEach((branch, branchIndex) => {
+        if (!branch || branch.length < 2) {
+          console.log(`Branche ${branchIndex} de la ligne ${line} ignorée (pas assez de stations)`)
+          return
+        }
+        
+        const path = branch.map(station => {
+          if (station.position && Array.isArray(station.position) && station.position.length === 2) {
+            return [station.position[1] / 1000, station.position[0] / 1000]
+          }
+          console.log(`Station sans position valide:`, station)
+          return null
+        }).filter(Boolean)
+        
+        if (path.length < 2) {
+          console.log(`Branche ${branchIndex} de la ligne ${line} ignorée (pas assez de positions valides)`)
+          return
+        }
+        
+        const polyline = {
+          line: line,
+          path: path,
+          color: LINE_COLORS[line] || '#1976d2'
+        }
+        
+        linesPolylines.value.push(polyline)
+        console.log(`Branche ${branchIndex} de la ligne ${line} ajoutée avec ${path.length} points`)
+      })
+    })
     
     console.log('Lignes traitées:', linesPolylines.value.length, 'polylines créées')
-  } catch (e) {
-    linesPolylines.value = [];
-    console.error('Erreur lors du chargement des lignes ordonnées:', e);
+    console.log('Détail des polylines:', linesPolylines.value)
+  } catch (error) {
+    console.error('Erreur lors du chargement des lignes:', error)
   }
 }
 
 function clearPath() {
-  startStation.value = ''
-  endStation.value = ''
-  startStationId.value = ''
-  endStationId.value = ''
-  startStationSuggestions.value = []
-  endStationSuggestions.value = []
   pathDetails.value = []
   pathLength.value = { duration: null, emissions: null, stationsCount: null }
   temporalData.value = null
-  console.log('Chemin effacé')
+  // console.log('Chemin effacé')
 }
 
 function validateTimeInput() {
@@ -529,6 +534,9 @@ async function findPath() {
 
   try {
     if (searchMode.value === 'temporal') {
+      // OPTIMISATION : Afficher un état de chargement progressif
+      console.log('Recherche temporelle en cours...');
+      
       // Recherche temporelle
       const response = await api.post('/temporal/path', {
         start_station: startStation.value,
@@ -539,50 +547,101 @@ async function findPath() {
         max_wait_time: 1800
       });
       
+      console.log('Réponse temporelle reçue:', response);
       temporalData.value = response;
       
-      // Convertir les données temporelles au format d'affichage classique
-      // Regrouper les segments par ligne pour créer des segments continus avec horaires
-      const segments = [];
-      let currentLine = null;
-      let currentStations = [];
-      let currentDuration = 0;
-      let currentStationTimes = [];
-      let currentTransferInfo = null;
-      
-      // Utiliser le chemin structurel depuis la réponse API
-      const structuralPath = response.structural_path || [];
-      
-      for (let i = 0; i < response.segments.length; i++) {
-        const segment = response.segments[i];
+      // OPTIMISATION : Traitement simplifié des données
+      if (response.segments && response.segments.length > 0) {
+        // Regrouper les segments par ligne pour créer des segments continus
+        const segments = [];
+        let currentLine = null;
+        let currentStations = [];
+        let currentDuration = 0;
+        let currentStationTimes = [];
+        let currentTransferInfo = null;
         
-        if (currentLine === null) {
-          // Premier segment
-          currentLine = segment.line;
-          // Récupérer toutes les stations de cette ligne depuis le chemin structurel
-          currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
+        // Utiliser le chemin structurel depuis la réponse API pour obtenir toutes les stations
+        const structuralPath = response.structural_path || [];
+        
+        for (let i = 0; i < response.segments.length; i++) {
+          const segment = response.segments[i];
           
-          // Créer les horaires pour ce segment
-          currentStationTimes = createStationTimesForSegment(currentStations, segment);
-          
-          currentDuration = segment.travel_time;
-        } else if (segment.line === currentLine) {
-          // Même ligne, ajouter les stations intermédiaires
-          const additionalStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
-          
-          // Fusionner les stations en évitant les doublons
-          additionalStations.forEach(station => {
-            if (!currentStations.includes(station)) {
-              currentStations.push(station);
+          if (currentLine === null) {
+            // Premier segment
+            currentLine = segment.line;
+            // Récupérer toutes les stations de cette ligne depuis le chemin structurel
+            currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
+            currentDuration = segment.travel_time;
+            currentStationTimes = [{
+              station: segment.from_station,
+              departure_time: segment.departure_time,
+              arrival_time: null,
+              wait_time: segment.wait_time
+            }, {
+              station: segment.to_station,
+              departure_time: null,
+              arrival_time: segment.arrival_time,
+              wait_time: 0
+            }];
+          } else if (segment.line === currentLine) {
+            // Même ligne, ajouter les stations intermédiaires et mettre à jour la durée
+            const additionalStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
+            
+            // Fusionner les stations en évitant les doublons
+            additionalStations.forEach(station => {
+              if (!currentStations.includes(station)) {
+                currentStations.push(station);
+              }
+            });
+            
+            // Mettre à jour la durée totale
+            currentDuration += segment.travel_time;
+            
+            // Mettre à jour les horaires
+            currentStationTimes.push({
+              station: segment.to_station,
+              departure_time: null,
+              arrival_time: segment.arrival_time,
+              wait_time: 0
+            });
+          } else {
+            // Changement de ligne, finaliser le segment précédent
+            segments.push({
+              line: currentLine,
+              stations: currentStations,
+              duration: currentDuration,
+              stationsCount: currentStations.length,
+              stationTimes: currentStationTimes,
+              transferInfo: currentTransferInfo
+            });
+            
+            // Commencer un nouveau segment avec les informations de transfert
+            currentLine = segment.line;
+            currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
+            currentTransferInfo = {
+              transferTime: segment.transfer_time,
+              waitTime: segment.wait_time,
+              transferStation: segment.from_station,
+              fromLine: segments[segments.length - 1]?.line,
+              toLine: segment.line
+            };
+            currentDuration = segment.travel_time;
+            currentStationTimes = [{
+              station: segment.from_station,
+              departure_time: segment.departure_time,
+              arrival_time: null,
+              wait_time: segment.wait_time
+            }, {
+              station: segment.to_station,
+              departure_time: null,
+              arrival_time: segment.arrival_time,
+              wait_time: 0
+            }];
           }
-          });
-          
-          // Mettre à jour les horaires avec le nouveau segment
-          currentStationTimes = updateStationTimes(currentStationTimes, segment);
-          
-          currentDuration += segment.travel_time;
-        } else {
-          // Changement de ligne, finaliser le segment précédent
+        }
+        
+        // Ajouter le dernier segment
+        if (currentStations.length > 0) {
           segments.push({
             line: currentLine,
             stations: currentStations,
@@ -591,44 +650,15 @@ async function findPath() {
             stationTimes: currentStationTimes,
             transferInfo: currentTransferInfo
           });
-          
-          // Commencer un nouveau segment avec les informations de transfert
-          currentLine = segment.line;
-          // Récupérer toutes les stations de cette nouvelle ligne
-          currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
-          currentTransferInfo = {
-            transferTime: segment.transfer_time,
-            waitTime: segment.wait_time,
-            transferStation: segment.from_station,
-            fromLine: segments[segments.length - 1]?.line,
-            toLine: segment.line
-          };
-          
-          // Créer les horaires pour le nouveau segment
-          currentStationTimes = createStationTimesForSegment(currentStations, segment);
-          
-          currentDuration = segment.travel_time;
         }
+        
+        pathDetails.value = segments;
+        pathLength.value = {
+          duration: response.total_duration,
+          emissions: response.emissions || 0,
+          stationsCount: segments.reduce((total, seg) => total + seg.stations.length, 0)
+        };
       }
-      
-      // Ajouter le dernier segment
-      if (currentStations.length > 0) {
-        segments.push({
-          line: currentLine,
-          stations: currentStations,
-          duration: currentDuration,
-          stationsCount: currentStations.length,
-          stationTimes: currentStationTimes,
-          transferInfo: currentTransferInfo
-        });
-      }
-      
-      pathDetails.value = segments;
-      pathLength.value = {
-        duration: response.total_duration,
-        emissions: response.emissions || 0, // Utiliser les émissions calculées par le backend
-        stationsCount: segments.reduce((total, seg) => total + seg.stations.length, 0)
-      };
     } else {
       // Recherche classique
       if (!startStationId.value || !endStationId.value) {
@@ -689,27 +719,19 @@ async function findPath() {
 }
 
 async function testConnexity() {
-  isLoading.value = true;
-  connexityResult.value = null;
-
   try {
-    const url = startStation.value
-      ? `http://localhost:5050/connexity?station=${encodeURIComponent(startStation.value)}`
-      : `http://localhost:5050/connexity`;
-
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (response.ok) {
-      connexityResult.value = data;
-    } else {
-      throw new Error(data.error || 'Erreur lors du test de connexité');
-    }
+    isLoading.value = true
+    const url = startStation.value 
+      ? `/connexity?station=${encodeURIComponent(startStation.value)}`
+      : '/connexity'
+    connexityResult.value = await api.get(url)
+    showConnexityModal.value = true
   } catch (error) {
-    console.error('Erreur:', error);
-    alert(error.message);
+    console.error('Erreur lors du test de connexité:', error)
+    connexityResult.value = { error: error.message }
+    showConnexityModal.value = true
   } finally {
-    isLoading.value = false;
+    isLoading.value = false
   }
 }
 
@@ -732,45 +754,48 @@ function getStationsForLine(structuralPath, line, fromStation, toStation) {
     return [fromStation, toStation];
   }
   
-  // Trouver les segments qui contiennent les stations de départ et d'arrivée
-  const relevantSegments = [];
-  let foundStart = false;
-  let foundEnd = false;
+  // Extraire toutes les stations de cette ligne dans l'ordre
+  const stations = [];
+  const seenStations = new Set();
   
   for (const segment of lineSegments) {
-    if (segment.from_station === fromStation || segment.to_station === fromStation) {
-      foundStart = true;
-    }
-    if (segment.from_station === toStation || segment.to_station === toStation) {
-      foundEnd = true;
-    }
-    
-    if (foundStart && !foundEnd) {
-      relevantSegments.push(segment);
-    }
-    
-    if (foundEnd) {
-      break;
-    }
-  }
-  
-  // Extraire toutes les stations uniques dans l'ordre
-  const stations = [];
-  for (const segment of relevantSegments) {
-    if (!stations.includes(segment.from_station)) {
+    // Ajouter la station de départ si pas déjà vue
+    if (!seenStations.has(segment.from_station)) {
       stations.push(segment.from_station);
+      seenStations.add(segment.from_station);
     }
-    if (!stations.includes(segment.to_station)) {
+    
+    // Ajouter la station d'arrivée si pas déjà vue
+    if (!seenStations.has(segment.to_station)) {
       stations.push(segment.to_station);
+      seenStations.add(segment.to_station);
     }
   }
   
-  // S'assurer que fromStation et toStation sont inclus
+  // Si les stations de départ et d'arrivée ne sont pas dans la liste,
+  // les ajouter aux bonnes positions
   if (!stations.includes(fromStation)) {
-    stations.unshift(fromStation);
+    // Trouver la position appropriée pour fromStation
+    const fromIndex = lineSegments.findIndex(seg => 
+      seg.from_station === fromStation || seg.to_station === fromStation
+    );
+    if (fromIndex >= 0) {
+      stations.splice(fromIndex, 0, fromStation);
+    } else {
+      stations.unshift(fromStation);
+    }
   }
+  
   if (!stations.includes(toStation)) {
-    stations.push(toStation);
+    // Trouver la position appropriée pour toStation
+    const toIndex = lineSegments.findIndex(seg => 
+      seg.from_station === toStation || seg.to_station === toStation
+    );
+    if (toIndex >= 0) {
+      stations.splice(toIndex + 1, 0, toStation);
+    } else {
+      stations.push(toStation);
+    }
   }
   
   return stations;
@@ -2024,7 +2049,7 @@ div[style*="top: var(--spacing-xl)"] {
   border: 0.5px solid rgba(255, 255, 255, 0.6);
   z-index: 1001;
   max-height: 280px;
-  overflow-y: auto;
+    overflow-y: auto;
   margin-top: 6px;
   animation: slideDown 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
@@ -2106,15 +2131,15 @@ div[style*="top: var(--spacing-xl)"] {
 .temporal-inputs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
+    gap: 16px;
+  }
+  
 .temporal-inputs {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
+    gap: 12px;
+  }
+  
 /* Styles pour les informations temporelles */
 .temporal-info {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
@@ -2142,7 +2167,7 @@ div[style*="top: var(--spacing-xl)"] {
 
 .temporal-details {
   display: flex;
-  flex-direction: column;
+    flex-direction: column;
   gap: var(--spacing-md);
 }
 
@@ -2205,9 +2230,9 @@ div[style*="top: var(--spacing-xl)"] {
 /* Styles pour les éléments d'affichage des stations */
 .station-time-item {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.2);
@@ -2231,9 +2256,9 @@ div[style*="top: var(--spacing-xl)"] {
 
 .station-main-row {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
   gap: 12px;
 }
 
@@ -2263,9 +2288,578 @@ div[style*="top: var(--spacing-xl)"] {
   background: rgba(255, 193, 7, 0.2);
   padding: 2px 6px;
   border-radius: 4px;
-  align-self: flex-start;
+    align-self: flex-start;
+  }
+  
+.station-times-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 120px;
+  flex-shrink: 0;
 }
 
+.station-times-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+.time-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.time-badge.glassmorphism {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.15));
+  backdrop-filter: blur(25px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.time-badge.glassmorphism.departure {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.15));
+  border-color: rgba(76, 175, 80, 0.4);
+}
+
+.time-badge.glassmorphism.arrival {
+  background: linear-gradient(135deg, rgba(255, 152, 0, 0.25), rgba(255, 152, 0, 0.15));
+  border-color: rgba(255, 152, 0, 0.4);
+}
+
+.time-badge.glassmorphism::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 50%, rgba(255, 255, 255, 0.05));
+  border-radius: 12px;
+  z-index: -1;
+}
+
+.time-badge.glassmorphism.departure::before {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), transparent 50%, rgba(76, 175, 80, 0.05));
+}
+
+.time-badge.glassmorphism.arrival::before {
+  background: linear-gradient(135deg, rgba(255, 152, 0, 0.1), transparent 50%, rgba(255, 152, 0, 0.05));
+}
+
+.time-badge.glassmorphism:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 12px 40px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.time-badge.glassmorphism.departure:hover {
+  border-color: rgba(76, 175, 80, 0.5);
+  box-shadow: 
+    0 12px 40px rgba(76, 175, 80, 0.2),
+    inset 0 1px 0 rgba(76, 175, 80, 0.3);
+}
+
+.time-badge.glassmorphism.arrival:hover {
+  border-color: rgba(255, 152, 0, 0.5);
+  box-shadow: 
+    0 12px 40px rgba(255, 152, 0, 0.2),
+    inset 0 1px 0 rgba(255, 152, 0, 0.3);
+}
+
+.time-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+}
+
+.time-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  opacity: 0.9;
+  color: rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+}
+
+.time-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  white-space: nowrap;
+}
+
+.trip-info-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(25px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.info-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+}
+
+.info-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: rgba(255, 255, 255, 0.9);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.info-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.total-time-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.3), rgba(76, 175, 80, 0.2));
+  border-radius: 12px;
+  border: 1px solid rgba(76, 175, 80, 0.4);
+  backdrop-filter: blur(20px);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 4px 16px rgba(76, 175, 80, 0.3);
+}
+
+.emissions-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 13l3 3 7-7'%3E%3C/path%3E%3Cpath d='M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z'%3E%3C/path%3E%3C/svg%3E");
+}
+
+.stations-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'%3E%3C/circle%3E%3Cpath d='M12 1v6m0 6v6'%3E%3C/path%3E%3Cpath d='M23 12h-6m-6 0H1'%3E%3C/path%3E%3C/svg%3E");
+}
+
+.acpm-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'%3E%3C/path%3E%3Cpolyline points='3.27,6.96 12,12.01 20.73,6.96'%3E%3C/polyline%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'%3E%3C/line%3E%3C/svg%3E");
+}
+
+.acpm-info {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.2), rgba(255, 193, 7, 0.1));
+  border: 1px solid rgba(255, 193, 7, 0.3);
+}
+
+/* ...existing code... */
+
+/* ✅ MODIFICATION : Responsive pour le nouveau panneau */
+@media (max-width: 768px) {
+  .trip-info-panel {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-xs);
+  }
+  
+  .info-item {
+    flex-direction: row;
+    justify-content: space-between;
+    text-align: left;
+  }
+  
+  .info-value {
+    margin-left: auto;
+  }
+}
+
+/* Styles pour le composant temporel */
+
+@media (max-width: 768px) {
+}
+
+/* Styles pour le panneau de contrôle unifié - Style Apple Glassmorphism */
+.unified-control-panel {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 1000;
+  width: 400px;
+  background: linear-gradient(135deg, rgba(89, 95, 207, 0.8), rgba(81, 171, 187, 0.8));
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-radius: 40px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+  padding: 2px;
+  overflow: hidden;
+  max-height: calc(100vh - 40px);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
+}
+
+.panel-container {
+  background: linear-gradient(145deg, rgba(61, 81, 181, 0.8), rgba(81, 162, 171, 0.8));
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-radius: 38px;
+  padding: 0;
+  overflow-y: auto;
+  max-height: calc(100vh - 40px);
+  display: flex;
+    flex-direction: column;
+}
+
+.panel-header {
+  padding: 28px 24px 20px;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.panel-header h2 {
+  margin: 0 0 20px 0;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.8px;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: none;
+}
+
+.mode-toggle {
+  display: flex;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 16px;
+  padding: 3px;
+  gap: 2px;
+  backdrop-filter: blur(20px);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+}
+
+.toggle-btn {
+  flex: 1;
+  padding: 14px 20px;
+  border: none;
+  border-radius: 13px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  font-size: 17px;
+  letter-spacing: -0.3px;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+}
+
+.toggle-btn.active {
+  background: rgba(255, 255, 255, 0.25);
+  color: rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    0 2px 12px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(20px);
+}
+
+.toggle-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Styles pour les suggestions - Apple Style */
+.suggestions-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(40px);
+  border-radius: 16px;
+  box-shadow: 
+    0 20px 40px rgba(0, 0, 0, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  border: 0.5px solid rgba(255, 255, 255, 0.6);
+  z-index: 1001;
+  max-height: 280px;
+    overflow-y: auto;
+  margin-top: 6px;
+  animation: slideDown 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.suggestion-item {
+  padding: 16px 20px;
+  cursor: pointer;
+  color: #1d1d1f;
+  font-weight: 500;
+  font-size: 16px;
+  letter-spacing: -0.2px;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: relative;
+}
+
+.suggestion-item:last-child {
+  border-bottom: none;
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
+}
+
+.suggestion-item:first-child {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
+.suggestion-item:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: #000;
+  transform: translateX(2px);
+}
+
+.suggestion-item::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #007AFF, #5AC8FA);
+  opacity: 0.8;
+  flex-shrink: 0;
+}
+
+/* Styles pour la section temporelle */
+.temporal-section {
+  margin-top: 20px;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 18px;
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+}
+
+.temporal-header {
+  margin-bottom: 16px;
+}
+
+.temporal-title {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.temporal-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  
+.temporal-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  
+/* Styles pour les informations temporelles */
+.temporal-info {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
+  border-radius: 20px;
+  padding: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(25px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  position: relative;
+  overflow: hidden;
+}
+
+.temporal-info::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent);
+  border-radius: 20px;
+  z-index: -1;
+}
+
+.temporal-details {
+  display: flex;
+    flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.temporal-details .detail-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.95);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.temporal-details .detail-item:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.clock-icon {
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cpolyline points='12 6 12 12 16 14'%3E%3C/polyline%3E%3C/svg%3E");
+  background-size: contain;
+  opacity: 0.8;
+}
+
+.wait-icon {
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2v6m0 6v6'%3E%3C/path%3E%3Cpath d='M23 12h-6m-6 0H1'%3E%3C/path%3E%3C/svg%3E");
+  background-size: contain;
+  opacity: 0.8;
+}
+
+.segment-times {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 4px;
+}
+
+.departure-time, .arrival-time {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-weight: 500;
+}
+
+.arrow {
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: bold;
+}
+
+/* Styles pour les éléments d'affichage des stations */
+.station-time-item {
+  display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+}
+
+.station-time-item:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+}
+
+.station-time-item.interchange {
+  background: linear-gradient(135deg, rgba(255, 193, 7, 0.2), rgba(255, 193, 7, 0.1));
+  border-color: rgba(255, 193, 7, 0.4);
+}
+
+.station-main-row {
+  display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  gap: 12px;
+}
+
+.station-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.station-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.98);
+  flex: 1;
+  min-width: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.interchange-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 193, 7, 0.9);
+  background: rgba(255, 193, 7, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+    align-self: flex-start;
+  }
+  
 .station-times-right {
   display: flex;
   flex-direction: column;

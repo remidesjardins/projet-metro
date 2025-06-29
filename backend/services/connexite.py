@@ -114,8 +114,12 @@ def test_connexite():
     
     return is_connected, checker.get_unreachable_stations()
 
-if __name__ == "__main__":
-    is_connected, unreachable = test_connexite()
-    print(f"Le graphe est {'connexe' if is_connected else 'non connexe'}")
-    if not is_connected:
-        print(f"Stations non accessibles: {len(unreachable)}")
+if __name__ == '__main__':
+    # Test de la connexité
+    checker = ConnexiteChecker()
+    is_connected = checker.is_connected()
+    unreachable = checker.get_unreachable_stations()
+    
+    # Affichage des résultats (supprimé pour la production)
+    # print(f"Le graphe est {'connexe' if is_connected else 'non connexe'}")
+    # print(f"Stations non accessibles: {len(unreachable)}")

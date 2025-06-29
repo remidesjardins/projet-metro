@@ -23,6 +23,6 @@ def clean_pospoints(input_path, output_path):
         for l in cleaned_lines:
             f.write(l + '\n')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     clean_pospoints(INPUT_FILE, OUTPUT_FILE)
-    print(f"Nettoyage terminé. {len(cleaned_lines)} lignes écrites dans {OUTPUT_FILE}") 
+    # print(f"Nettoyage terminé. {len(cleaned_lines)} lignes écrites dans {OUTPUT_FILE}") 

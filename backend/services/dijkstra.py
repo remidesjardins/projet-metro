@@ -108,16 +108,24 @@ def shortest_path_by_name(start_name: str, end_name: str) -> Tuple[List[str], in
         raise ValueError(f"Aucun chemin trouvé entre '{start_name}' et '{end_name}'")
 
 def main():
+    # Test de l'algorithme de Dijkstra
     graph, positions, stations = load_data()
-    # Exemple : plus court chemin entre Abbesses (0000) et Bastille (0016)
-    start_id = '0000'  # Abbesses
-    end_id = '0016'    # Bastille
-    dist, path = dijkstra(graph, start_id, end_id)
-    if path:
-        print(f"Chemin trouvé : {print_path(path, stations)}")
-        print(f"Durée totale : {dist} secondes (soit {dist/60:.1f} minutes)")
-    else:
-        print("Aucun chemin trouvé.")
+    
+    # Test avec des stations existantes
+    start_station = '0000'  # Abbesses
+    end_station = '0016'    # Bastille
+    
+    if start_station in graph and end_station in graph:
+        dist, path = dijkstra(graph, start_station, end_station)
+        
+        if path:
+            # Affichage des résultats (supprimé pour la production)
+            # print(f"Chemin trouvé : {print_path(path, stations)}")
+            # print(f"Durée totale : {dist} secondes (soit {dist/60:.1f} minutes)")
+            pass
+        else:
+            # print("Aucun chemin trouvé.")
+            pass
 
 if __name__ == "__main__":
     main()

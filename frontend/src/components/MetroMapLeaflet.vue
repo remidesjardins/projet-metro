@@ -22,7 +22,7 @@
       <l-polyline
         v-if="showLines"
         v-for="(line, idx) in linesPolylines"
-        :key="'line-polyline-' + line.line"
+        :key="'line-polyline-' + line.line + '-' + idx"
         :lat-lngs="line.path"
         :color="line.color"
         :weight="6"
@@ -189,38 +189,24 @@ const LINE_COLORS = {
 // Charger les stations depuis l'API
 async function fetchStations() {
   try {
-    const res = await fetch('http://localhost:5050/stations', {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      credentials: 'include'
-    })
-    const data = await res.json()
-    console.log(data)
-
-    // S'assurer que chaque station a une position valide et ajouter la ligne
+    const data = await api.getStationsList()
+    // console.log(data)
     stations.value = data.stations.filter(s => s.position && Array.isArray(s.position) && s.position.length === 2)
       .map(station => {
-        // Pour la couleur, on prend la première ligne de la station
         const line = Array.isArray(station.lines) && station.lines.length > 0
           ? station.lines[0]
-          : '1'; // Ligne 1 par défaut
-
+          : station.lines
         return {
-          ...station,
-          line: line // Ajouter la propriété line pour faciliter l'accès
-        };
-      });
-    
-    // Stocker aussi les stations pour la recherche par nom
-    allStations.value = stations.value;
+          id: station.ids && station.ids.length > 0 ? station.ids[0] : station.id,
+          name: station.name,
+          lines: station.lines,
+          position: station.position
+        }
+      })
   } catch (error) {
     console.error('Erreur lors du chargement des stations:', error)
   }
 }
-
-
 
 // Charger toutes les stations uniques depuis notre nouvelle API
 function getLatLng(station) {
@@ -329,14 +315,46 @@ function initializeMap() {
   });
 }
 
-// Debug: surveiller les changements depuis HomeView
+// Watchers pour les changements de données
 watch(showLines, (newValue) => {
   console.log('[MetroMapLeaflet] showLines changé:', newValue)
-}, { immediate: true })
+  console.log('[MetroMapLeaflet] linesPolylines actuel:', linesPolylines.value.length, 'lignes')
+})
 
 watch(linesPolylines, (newValue) => {
   console.log('[MetroMapLeaflet] linesPolylines changé:', newValue.length, 'lignes')
-}, { immediate: true })
+  console.log('[MetroMapLeaflet] Détail des lignes:', newValue)
+  
+  // Vérifier que chaque ligne a les bonnes propriétés
+  newValue.forEach((line, index) => {
+    console.log(`[MetroMapLeaflet] Ligne ${index}:`, {
+      line: line.line,
+      pathLength: line.path ? line.path.length : 0,
+      color: line.color,
+      hasPath: !!line.path
+    })
+    
+    // Afficher les coordonnées de la première ligne pour debug
+    if (index === 0 && line.path && line.path.length > 0) {
+      console.log('[MetroMapLeaflet] Coordonnées de la ligne 1:', line.path.slice(0, 5)) // Afficher les 5 premiers points
+    }
+  })
+}, { deep: true })
+
+watch(acpmPath, (newValue) => {
+  console.log('[MetroMapLeaflet] acpmPath changé:', newValue.length, 'chemins')
+  console.log('[MetroMapLeaflet] Détail des chemins ACPM:', newValue)
+  
+  // Afficher le détail du premier chemin pour debug
+  if (newValue.length > 0) {
+    console.log('[MetroMapLeaflet] Premier chemin ACPM:', newValue[0])
+    console.log('[MetroMapLeaflet] Coordonnées du premier chemin:', newValue[0].path)
+  }
+})
+
+watch(showACPM, (newValue) => {
+  console.log('[MetroMapLeaflet] showACPM changé:', newValue)
+})
 
 // Watcher pour le zoom afin de mettre à jour la taille des icônes
 watch(zoom, () => {

@@ -10,7 +10,7 @@ def client():
         yield client
 
 def test_index(client):
-    """Test la route d'accueil."""
+    """Test la route GET /."""
     response = client.get('/')
     assert response.status_code == 200
     data = json.loads(response.data)
@@ -24,15 +24,13 @@ def test_get_stations(client):
     assert response.status_code == 200
     data = json.loads(response.data)
     assert 'stations' in data
-    assert 'count' in data
+    assert isinstance(data['stations'], list)
     assert len(data['stations']) > 0
-    
     # Vérifier la structure d'une station
-    station = data['stations'][0]
-    assert 'id' in station
-    assert 'name' in station
-    assert 'line' in station
-    assert 'position' in station
+    first_station = data['stations'][0]
+    assert 'name' in first_station
+    assert 'lines' in first_station or 'line' in first_station
+    assert 'position' in first_station
 
 def test_get_graph(client):
     """Test la route GET /graph."""
@@ -40,15 +38,7 @@ def test_get_graph(client):
     assert response.status_code == 200
     data = json.loads(response.data)
     assert 'graph' in data
-    assert 'stations_count' in data
-    assert 'connections_count' in data
-    
-    # Vérifier la structure du graphe
-    graph = data['graph']
-    assert len(graph) > 0
-    for station_id, station_data in graph.items():
-        assert 'name' in station_data
-        assert 'neighbors' in station_data
+    assert len(data['graph']) > 0
 
 def test_get_connexity(client):
     """Test la route GET /connexity."""
@@ -56,12 +46,12 @@ def test_get_connexity(client):
     assert response.status_code == 200
     data = json.loads(response.data)
     assert 'is_connected' in data
-    assert 'components_count' in data
-    
-    # Si le graphe n'est pas connexe, vérifier les composantes
+    assert 'reachable_stations' in data
+    assert 'total_stations' in data
+    # Si le graphe n'est pas connexe, vérifier les stations inaccessibles
     if not data['is_connected']:
-        assert 'components' in data
-        assert len(data['components']) > 0
+        assert 'unreachable_stations' in data
+        assert 'unreachable_count' in data
 
 def test_get_acpm(client):
     """Test la route GET /acpm."""
@@ -71,9 +61,9 @@ def test_get_acpm(client):
     assert 'mst' in data
     assert 'total_weight' in data
     assert 'edges_count' in data
-    
     # Vérifier la structure de l'ACPM
     mst = data['mst']
+    assert isinstance(mst, list)
     assert len(mst) > 0
     for edge in mst:
         assert 'from' in edge
@@ -96,20 +86,28 @@ def test_shortest_path(client):
                           content_type='application/json')
     assert response.status_code == 200
     data = json.loads(response.data)
-    assert 'path' in data
+    assert 'chemin' in data
     assert 'duration' in data
+    assert 'emissions' in data
     assert 'stations_count' in data
-    
-    # Vérifier la structure du chemin
-    path = data['path']
-    assert len(path) > 0
-    for station in path:
-        assert 'id' in station
-        assert 'name' in station
-        assert 'line' in station
-        assert 'position' in station
-    
-    # Test avec des stations invalides
+
+    # Vérifier la structure du chemin (nouvelle structure)
+    chemin = data['chemin']
+    assert len(chemin) > 0
+    for segment in chemin:
+        assert 'Ligne' in segment
+        assert 'Stations' in segment
+        assert 'Duration' in segment
+
+        stations = segment['Stations']
+        assert len(stations) > 0
+        for station in stations:
+            assert 'ID' in station
+            assert 'Nom Station' in station
+            assert 'Lignes' in station
+            assert 'Position' in station
+
+    # Test avec des stations invalides (maintenant retourne 404)
     invalid_data = {
         'start': 'invalid',
         'end': 'invalid'
@@ -117,13 +115,17 @@ def test_shortest_path(client):
     response = client.post('/shortest-path',
                           data=json.dumps(invalid_data),
                           content_type='application/json')
-    assert response.status_code == 400
-    
+    assert response.status_code == 404
+    data = json.loads(response.data)
+    assert 'error' in data
+    assert data['error']['code'] == 'NOT_FOUND'
+
     # Test avec des données manquantes
-    missing_data = {
-        'start': '0000'
-    }
+    missing_data = {}
     response = client.post('/shortest-path',
                           data=json.dumps(missing_data),
                           content_type='application/json')
-    assert response.status_code == 400 
+    assert response.status_code == 400
+    data = json.loads(response.data)
+    assert 'error' in data
+    assert data['error']['code'] == 'VALIDATION_ERROR' 

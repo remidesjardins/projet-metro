@@ -24,29 +24,42 @@ class UnionFind:
                 self.rank[xroot] += 1
         return True
 
-def kruskal_mst():
-    graph, positions, stations = load_data()
-    edges: List[Tuple[int, str, str]] = []  # (poids, station1, station2)
-    seen = set()
-    for s1 in graph:
-        for s2, weight in graph[s1].items():
-            if (s2, s1) not in seen:
-                edges.append((weight, s1, s2))
-                seen.add((s1, s2))
-    # Tri des arêtes par poids croissant
-    edges.sort()
-    uf = UnionFind(graph.keys())
+def kruskal_mst(edges, n):
+    uf = UnionFind(range(n))
     mst = []
     total_weight = 0
     for weight, s1, s2 in edges:
         if uf.union(s1, s2):
             mst.append((s1, s2, weight))
             total_weight += weight
-            if len(mst) == len(graph) - 1:
+            if len(mst) == n - 1:
                 break
     return mst, total_weight
 
-if __name__ == "__main__":
-    mst, total_weight = kruskal_mst()
-    print(f"Poids total de l'arbre couvrant : {total_weight}")
-    print(f"Nombre d'arêtes dans l'ACPM : {len(mst)}")
+if __name__ == '__main__':
+    # Test du calcul de l'ACPM
+    graph, positions, stations = load_data()
+    
+    # Calculer l'ACPM
+    edges = []
+    seen = set()
+    for s1 in graph:
+        for s2, weight_data in graph[s1].items():
+            if (s2, s1) not in seen:
+                # Extraire le poids selon le nouveau format
+                if isinstance(weight_data, list) and len(weight_data) > 0:
+                    weight = weight_data[0]['time'] if isinstance(weight_data[0], dict) else weight_data[0]
+                elif isinstance(weight_data, dict):
+                    weight = weight_data.get('time', weight_data)
+                else:
+                    weight = weight_data
+                
+                edges.append((weight, s1, s2))
+                seen.add((s1, s2))
+    
+    edges.sort()
+    mst, total_weight = kruskal_mst(edges, len(graph))
+    
+    # Affichage des résultats (supprimé pour la production)
+    # print(f"Poids total de l'arbre couvrant : {total_weight}")
+    # print(f"Nombre d'arêtes dans l'ACPM : {len(mst)}")

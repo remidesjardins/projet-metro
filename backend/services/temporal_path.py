@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -148,9 +149,13 @@ class TemporalPathService:
         Returns:
             Le chemin temporel optimal ou None si impossible
         """
+        start_time = time.time()
+        
         # 1. Vérifier la disponibilité du service
+        service_check_start = time.time()
         service_info = self.check_service_availability(start_station, departure_time)
-        logger.info(f"[TEMPORAL] Vérification service: {service_info.message}")
+        service_check_time = time.time() - service_check_start
+        logger.info(f"[PERF] Vérification service: {service_check_time:.3f}s - {service_info.message}")
         
         # Si pas de service disponible, essayer avec l'heure suggérée
         effective_departure_time = departure_time
@@ -159,25 +164,41 @@ class TemporalPathService:
             logger.info(f"[TEMPORAL] Utilisation de l'heure suggérée: {effective_departure_time.strftime('%H:%M')}")
         
         # 2. Trouver plusieurs chemins structurels
+        structural_start = time.time()
         structural_paths = self.graph_service.find_multiple_paths(
             start_station, end_station, max_structural_paths
         )
+        structural_time = time.time() - structural_start
+        logger.info(f"[PERF] Recherche chemins structurels: {structural_time:.3f}s - {len(structural_paths)} chemins trouvés")
         
         if not structural_paths:
             return None
         
         # 3. Évaluer chaque chemin temporellement
+        temporal_eval_start = time.time()
         temporal_paths = []
-        for path in structural_paths:
+        cache_hits = 0
+        cache_misses = 0
+        
+        for i, path in enumerate(structural_paths):
+            segment_start = time.time()
             temporal_path = self._evaluate_temporal_path(
                 path, effective_departure_time, max_wait_time
             )
+            segment_time = time.time() - segment_start
+            
             if temporal_path:
                 # Ajuster le departure_time original si on a utilisé une heure suggérée
                 if effective_departure_time != departure_time:
                     temporal_path.departure_time = departure_time
                     temporal_path.total_duration = int((temporal_path.arrival_time - departure_time).total_seconds())
                 temporal_paths.append(temporal_path)
+                logger.info(f"[PERF] Chemin {i+1} évalué en {segment_time:.3f}s")
+            else:
+                logger.info(f"[PERF] Chemin {i+1} impossible en {segment_time:.3f}s")
+        
+        temporal_eval_time = time.time() - temporal_eval_start
+        logger.info(f"[PERF] Évaluation temporelle totale: {temporal_eval_time:.3f}s - {len(temporal_paths)} chemins valides")
         
         # 4. Retourner le plus rapide en tenant compte des transferts
         if not temporal_paths:
@@ -203,6 +224,9 @@ class TemporalPathService:
         
         # Trier par score pondéré
         temporal_paths.sort(key=calculate_weighted_score)
+        
+        total_time = time.time() - start_time
+        logger.info(f"[PERF] Recherche temporelle complète: {total_time:.3f}s (service: {service_check_time:.3f}s, structurel: {structural_time:.3f}s, temporel: {temporal_eval_time:.3f}s)")
         
         return temporal_paths[0]
     
@@ -284,37 +308,48 @@ class TemporalPathService:
             # --- NOUVEAU : Calculer le temps réel GTFS entre from_station et to_station sur la ligne ---
             real_travel_time = None
             dep_a, arr_b = None, None
-            # Utiliser la méthode GTFS pour trouver le vrai temps de parcours
-            route_ids = self.gtfs_service.route_name_to_ids.get(line, [])
-            trips = self.gtfs_service.trips_df[self.gtfs_service.trips_df['route_id'].isin(route_ids)]['trip_id'].tolist()
-            stop_ids_a = self.gtfs_service.stop_name_to_ids.get(from_station, [])
-            stop_ids_b = self.gtfs_service.stop_name_to_ids.get(to_station, [])
-            best_dep = None
-            best_arr = None
-            for trip_id in trips:
-                stops = self.gtfs_service.stop_times_cache.get(trip_id, [])
-                indices = {s['stop_id']: i for i, s in enumerate(stops)}
-                for id_a in stop_ids_a:
-                    for id_b in stop_ids_b:
-                        if id_a in indices and id_b in indices and indices[id_a] < indices[id_b]:
-                            stop_a = stops[indices[id_a]]
-                            stop_b = stops[indices[id_b]]
-                            dep_time = self.gtfs_service._parse_gtfs_time(stop_a['departure_time'], next_departure.date())
-                            arr_time = self.gtfs_service._parse_gtfs_time(stop_b['arrival_time'], next_departure.date())
-                            # On veut le premier trip qui part après next_departure
-                            if dep_time >= next_departure:
-                                if best_dep is None or dep_time < best_dep:
-                                    best_dep = dep_time
-                                    best_arr = arr_time
-            if best_dep and best_arr:
-                real_travel_time = int((best_arr - best_dep).total_seconds())
-                # On ajuste next_departure si besoin (pour coller au vrai départ)
-                next_departure = best_dep
-                arrival_time = best_arr
-            else:
-                # fallback : on garde la logique précédente
-                real_travel_time = segment['time']
+            
+            # OPTIMISATION : Utiliser le cache des temps de trajet d'abord
+            cached_travel_time = self.gtfs_service.get_travel_time(from_station, to_station, line)
+            if cached_travel_time is not None:
+                real_travel_time = cached_travel_time
+                # Calculer les heures de départ et d'arrivée basées sur le temps de trajet
                 arrival_time = next_departure + timedelta(seconds=real_travel_time)
+            else:
+                # Fallback : utiliser la méthode GTFS originale (plus lente)
+                route_ids = self.gtfs_service.route_name_to_ids.get(line, [])
+                trips = self.gtfs_service.trips_df[self.gtfs_service.trips_df['route_id'].isin(route_ids)]['trip_id'].tolist()
+                stop_ids_a = self.gtfs_service.stop_name_to_ids.get(from_station, [])
+                stop_ids_b = self.gtfs_service.stop_name_to_ids.get(to_station, [])
+                best_dep = None
+                best_arr = None
+                
+                # OPTIMISATION : Limiter le nombre de trips testés
+                for trip_id in trips[:5]:  # Tester seulement les 5 premiers trips
+                    stops = self.gtfs_service.stop_times_cache.get(trip_id, [])
+                    indices = {s['stop_id']: i for i, s in enumerate(stops)}
+                    for id_a in stop_ids_a:
+                        for id_b in stop_ids_b:
+                            if id_a in indices and id_b in indices and indices[id_a] < indices[id_b]:
+                                stop_a = stops[indices[id_a]]
+                                stop_b = stops[indices[id_b]]
+                                dep_time = self.gtfs_service._parse_gtfs_time(stop_a['departure_time'], next_departure.date())
+                                arr_time = self.gtfs_service._parse_gtfs_time(stop_b['arrival_time'], next_departure.date())
+                                # On veut le premier trip qui part après next_departure
+                                if dep_time >= next_departure:
+                                    if best_dep is None or dep_time < best_dep:
+                                        best_dep = dep_time
+                                        best_arr = arr_time
+                
+                if best_dep and best_arr:
+                    real_travel_time = int((best_arr - best_dep).total_seconds())
+                    # On ajuste next_departure si besoin (pour coller au vrai départ)
+                    next_departure = best_dep
+                    arrival_time = best_arr
+                else:
+                    # fallback : on garde la logique précédente
+                    real_travel_time = segment['time']
+                    arrival_time = next_departure + timedelta(seconds=real_travel_time)
             # --- FIN NOUVEAU ---
             
             # Créer le segment temporel
