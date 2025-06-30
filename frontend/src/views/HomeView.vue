@@ -29,6 +29,8 @@ const temporalData = ref(null) // Données temporelles
 // Paramètres temporels
 const departureTime = ref('08:30')
 const departureDate = ref('2024-03-15')
+// Ajout : type d'heure (départ/arrivée)
+const timeType = ref('departure') // 'departure' ou 'arrival'
 
 // Debouncing pour les suggestions
 const startStationDebounce = ref(null)
@@ -407,10 +409,10 @@ async function fetchACPM() {
       if (fromStation && toStation && fromStation.position && toStation.position) {
         return {
           path: [
-            [fromStation.position[1] / 1000, fromStation.position[0] / 1000],
-            [toStation.position[1] / 1000, toStation.position[0] / 1000]
+            [fromStation.position[0] / 1000, fromStation.position[1] / 1000],
+            [toStation.position[0] / 1000, toStation.position[1] / 1000]
           ],
-          color: '#FF6B6B',
+          color: '#000000', // Noir pour ACPM
           weight: 4,
           opacity: 0.8
         }
@@ -459,7 +461,7 @@ async function fetchLines() {
         
         const path = branch.map(station => {
           if (station.position && Array.isArray(station.position) && station.position.length === 2) {
-            return [station.position[1] / 1000, station.position[0] / 1000]
+            return [station.position[0] / 1000, station.position[1] / 1000]
           }
           console.log(`Station sans position valide:`, station)
           return null
@@ -473,7 +475,8 @@ async function fetchLines() {
         const polyline = {
           line: line,
           path: path,
-          color: LINE_COLORS[line] || '#1976d2'
+          color: darkenColor(LINE_COLORS[line] || '#1976d2', 0.7), // Couleur plus foncée
+          opacity: 1 // Opacité maximale
         }
         
         linesPolylines.value.push(polyline)
@@ -534,24 +537,37 @@ async function findPath() {
 
   try {
     if (searchMode.value === 'temporal') {
-      // OPTIMISATION : Afficher un état de chargement progressif
-      console.log('Recherche temporelle en cours...');
-      
       // Recherche temporelle
-      const response = await api.post('/temporal/path', {
-        start_station: startStation.value,
-        end_station: endStation.value,
-        departure_time: departureTime.value,
-        date: departureDate.value,
-        max_paths: 3,
-        max_wait_time: 1800
-      });
-      
-      console.log('Réponse temporelle reçue:', response);
+      let response;
+      if (timeType.value === 'departure') {
+        response = await api.post('/temporal/path', {
+          start_station: startStation.value,
+          end_station: endStation.value,
+          departure_time: departureTime.value,
+          date: departureDate.value,
+          max_paths: 3,
+          max_wait_time: 1800
+        });
+      } else {
+        response = await api.post('/temporal/path-arrival', {
+          start_station: startStation.value,
+          end_station: endStation.value,
+          arrival_time: departureTime.value,
+          date: departureDate.value,
+          max_paths: 3,
+          max_wait_time: 1800
+        });
+      }
       temporalData.value = response;
       
       // OPTIMISATION : Traitement simplifié des données
       if (response.segments && response.segments.length > 0) {
+        // S'assurer que temporalData.value contient les segments bruts pour les fonctions getTransferTime/getWaitTime
+        temporalData.value = {
+          ...response,
+          segments: response.segments // Conserver les segments bruts
+        };
+        
         // Regrouper les segments par ligne pour créer des segments continus
         const segments = [];
         let currentLine = null;
@@ -559,6 +575,8 @@ async function findPath() {
         let currentDuration = 0;
         let currentStationTimes = {};
         let currentTransferInfo = null;
+        let firstSegmentOfLine = null;
+        let lastSegmentOfLine = null;
         
         // Utiliser le chemin structurel depuis la réponse API pour obtenir toutes les stations
         const structuralPath = response.structural_path || [];
@@ -569,15 +587,16 @@ async function findPath() {
           if (currentLine === null) {
             // Premier segment
             currentLine = segment.line;
+            firstSegmentOfLine = segment;
+            lastSegmentOfLine = segment;
             // Récupérer toutes les stations de cette ligne depuis le chemin structurel
             currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
-            currentDuration = segment.travel_time;
             
             // Créer les horaires pour toutes les stations de ce segment
             currentStationTimes = createStationTimesForSegment(currentStations, segment);
             
           } else if (segment.line === currentLine) {
-            // Même ligne, ajouter les stations intermédiaires et mettre à jour la durée
+            // Même ligne, ajouter les stations intermédiaires
             const additionalStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
             
             // Fusionner les stations en évitant les doublons
@@ -587,14 +606,21 @@ async function findPath() {
               }
             });
             
-            // Mettre à jour la durée totale
-            currentDuration += segment.travel_time;
+            // Mettre à jour le dernier segment de cette ligne
+            lastSegmentOfLine = segment;
             
             // Mettre à jour les horaires pour les nouvelles stations
             currentStationTimes = updateStationTimes(currentStationTimes, segment);
             
           } else {
             // Changement de ligne, finaliser le segment précédent
+            // Calculer la durée réelle basée sur les horaires
+            if (firstSegmentOfLine && lastSegmentOfLine) {
+              const departureTime = new Date(`2000-01-01T${firstSegmentOfLine.departure_time}`);
+              const arrivalTime = new Date(`2000-01-01T${lastSegmentOfLine.arrival_time}`);
+              currentDuration = Math.round((arrivalTime - departureTime) / 1000); // en secondes
+            }
+            
             segments.push({
               line: currentLine,
               stations: currentStations,
@@ -606,6 +632,8 @@ async function findPath() {
             
             // Commencer un nouveau segment avec les informations de transfert
             currentLine = segment.line;
+            firstSegmentOfLine = segment;
+            lastSegmentOfLine = segment;
             currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
             currentTransferInfo = {
               transferTime: segment.transfer_time,
@@ -614,7 +642,6 @@ async function findPath() {
               fromLine: segments[segments.length - 1]?.line,
               toLine: segment.line
             };
-            currentDuration = segment.travel_time;
             
             // Créer les horaires pour le nouveau segment
             currentStationTimes = createStationTimesForSegment(currentStations, segment);
@@ -623,6 +650,13 @@ async function findPath() {
         
         // Ajouter le dernier segment
         if (currentStations.length > 0) {
+          // Calculer la durée réelle pour le dernier segment
+          if (firstSegmentOfLine && lastSegmentOfLine) {
+            const departureTime = new Date(`2000-01-01T${firstSegmentOfLine.departure_time}`);
+            const arrivalTime = new Date(`2000-01-01T${lastSegmentOfLine.arrival_time}`);
+            currentDuration = Math.round((arrivalTime - departureTime) / 1000); // en secondes
+          }
+          
           segments.push({
             line: currentLine,
             stations: currentStations,
@@ -871,6 +905,19 @@ function updateStationTimes(existingTimes, newSegment) {
   
   return existingTimes;
 }
+
+// Ajoute cette fonction utilitaire en haut du script (avant fetchLines) :
+function darkenColor(hex, factor = 0.7) {
+  // hex: #RRGGBB, factor < 1 pour foncer
+  if (!hex || typeof hex !== 'string' || !hex.startsWith('#')) return hex;
+  let r = parseInt(hex.slice(1, 3), 16);
+  let g = parseInt(hex.slice(3, 5), 16);
+  let b = parseInt(hex.slice(5, 7), 16);
+  r = Math.floor(r * factor);
+  g = Math.floor(g * factor);
+  b = Math.floor(b * factor);
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
 </script>
 
 <template>
@@ -964,37 +1011,58 @@ function updateStationTimes(existingTimes, newSegment) {
           <!-- Paramètres temporels -->
           <div v-if="searchMode === 'temporal'" class="temporal-section">
             <div class="temporal-header">
-                <span class="temporal-title">Horaire de départ</span>
+              <span class="temporal-title">
+                <span v-if="timeType === 'departure'">Heure de départ</span>
+                <span v-else>Heure d'arrivée</span>
+              </span>
+              <div class="mode-toggle" style="margin-left: 1rem; display: inline-block;">
+                <button 
+                  :class="['toggle-btn', { active: timeType === 'departure' }]"
+                  @click="timeType = 'departure'"
+                  style="min-width: 90px;"
+                >
+                  Départ
+                </button>
+                <button 
+                  :class="['toggle-btn', { active: timeType === 'arrival' }]"
+                  @click="timeType = 'arrival'"
+                  style="min-width: 90px;"
+                >
+                  Arrivée
+                </button>
+              </div>
             </div>
             <div class="temporal-inputs">
-          <div class="input-group">
-                  <label for="departureTime">
-                    <span class="label-text">Heure</span>
-                  </label>
-            <input
-              id="departureTime"
-              v-model="departureTime"
-                    type="text"
-                    placeholder="08:30 ou 24:30 (00:30 lendemain)"
-                    pattern="^([0-2]?[0-9]|3[0-1]):[0-5][0-9]$"
-                    class="time-input"
-                    @blur="validateTimeInput"
-            />
-          </div>
-          <div class="input-group">
-                  <label for="departureDate">
-                    <span class="label-text">Date</span>
-                  </label>
-            <input
-              id="departureDate"
-              v-model="departureDate"
-              type="date"
-              min="2024-03-01"
-              max="2024-03-31"
-                    class="date-input"
-            />
-          </div>
-        </div>
+              <div class="input-group">
+                <label :for="timeType === 'departure' ? 'departureTime' : 'arrivalTime'">
+                  <span class="label-text">
+                    {{ timeType === 'departure' ? 'Heure de départ' : 'Heure d\'arrivée' }}
+                  </span>
+                </label>
+                <input
+                  :id="timeType === 'departure' ? 'departureTime' : 'arrivalTime'"
+                  v-model="departureTime"
+                  type="text"
+                  :placeholder="timeType === 'departure' ? '08:30 ou 24:30 (00:30 lendemain)' : '09:00 ou 24:30'"
+                  pattern="^([0-2]?[0-9]|3[0-1]):[0-5][0-9]$"
+                  class="time-input"
+                  @blur="validateTimeInput"
+                />
+              </div>
+              <div class="input-group">
+                <label for="departureDate">
+                  <span class="label-text">Date</span>
+                </label>
+                <input
+                  id="departureDate"
+                  v-model="departureDate"
+                  type="date"
+                  min="2024-03-01"
+                  max="2024-03-31"
+                  class="date-input"
+                />
+              </div>
+            </div>
           </div>
 
             <!-- Bouton de recherche principal -->

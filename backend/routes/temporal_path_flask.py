@@ -138,6 +138,103 @@ def get_temporal_path():
         logger.error(f"[TEMPORAL_PATH] Erreur lors du calcul du chemin temporel: {e}")
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
+@temporal_bp.route('/path-arrival', methods=['POST'])
+def get_temporal_path_with_arrival():
+    """
+    Calcule le chemin temporel optimal entre deux stations en partant de l'heure d'arrivée souhaitée
+    
+    Body JSON:
+    {
+        "start_station": "Châtelet",
+        "end_station": "Bastille", 
+        "arrival_time": "09:00",
+        "date": "2024-01-15",  // optionnel
+        "max_paths": 3,        // optionnel
+        "max_wait_time": 1800  // optionnel (30 min en secondes)
+    }
+    """
+    try:
+        data = request.get_json()
+        logger.info(f"[TEMPORAL_PATH_ARRIVAL] Requête reçue: {data}")
+        
+        if not data:
+            logger.warning("[TEMPORAL_PATH_ARRIVAL] Données JSON manquantes")
+            return jsonify({"error": "Données JSON requises"}), 400
+        
+        # Validation des paramètres requis
+        required_fields = ['start_station', 'end_station', 'arrival_time']
+        for field in required_fields:
+            if field not in data:
+                logger.warning(f"[TEMPORAL_PATH_ARRIVAL] Champ requis manquant: {field}")
+                return jsonify({"error": f"Champ requis manquant: {field}"}), 400
+        
+        # Parser les paramètres
+        arrival_time = parse_time_and_date(
+            data['arrival_time'], 
+            data.get('date')
+        )
+        logger.info(f"[TEMPORAL_PATH_ARRIVAL] Paramètres: start={data['start_station']}, end={data['end_station']}, arrival_time={arrival_time}")
+        
+        max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
+        max_wait_time = data.get('max_wait_time', Config.TEMPORAL_DEFAULT_MAX_WAIT_TIME)
+        
+        # Obtenir les services
+        temporal_service, graph_service, _ = get_services()
+        
+        # Log les chemins structurels trouvés
+        structural_paths = graph_service.find_multiple_paths(
+            data['start_station'], data['end_station'], Config.TEMPORAL_MAX_STRUCTURAL_PATHS
+        )
+        logger.info(f"[TEMPORAL_PATH_ARRIVAL] Nombre de chemins structurels trouvés: {len(structural_paths)}")
+        if len(structural_paths) == 0:
+            logger.warning(f"[TEMPORAL_PATH_ARRIVAL] Aucun chemin structurel trouvé entre {data['start_station']} et {data['end_station']}")
+        
+        # Calculer le chemin optimal avec logique rétrograde
+        path = temporal_service.find_optimal_temporal_path_with_arrival_time(
+            start_station=data['start_station'],
+            end_station=data['end_station'],
+            arrival_time=arrival_time,
+            max_structural_paths=Config.TEMPORAL_MAX_STRUCTURAL_PATHS,
+            max_wait_time=max_wait_time
+        )
+        
+        if not path:
+            # Vérifier si c'est un problème de disponibilité du service
+            service_info = temporal_service.check_service_availability(
+                data['end_station'], arrival_time
+            )
+            
+            error_response = {
+                "error": f"Aucun chemin trouvé entre {data['start_station']} et {data['end_station']} pour arriver à {data['arrival_time']}",
+                "service_info": {
+                    "is_service_available": service_info.is_service_available,
+                    "message": service_info.message,
+                    "first_departure": service_info.first_departure.strftime("%H:%M") if service_info.first_departure else None,
+                    "last_departure": service_info.last_departure.strftime("%H:%M") if service_info.last_departure else None,
+                    "suggested_departure": service_info.suggested_departure.strftime("%H:%M") if service_info.suggested_departure else None
+                }
+            }
+            
+            logger.warning(f"[TEMPORAL_PATH_ARRIVAL] {error_response['error']} - {service_info.message}")
+            return jsonify(error_response), 404
+        
+        # Convertir en format de réponse
+        response = convert_temporal_path_to_dict(path)
+        
+        # Log détaillé du chemin optimal envoyé au frontend
+        segments_info = [(s['from_station'], s['to_station'], s['line']) for s in response['segments']]
+        logger.info(f"[TEMPORAL_PATH_ARRIVAL] Chemin optimal envoyé au frontend: {segments_info}")
+        logger.info(f"[TEMPORAL_PATH_ARRIVAL] Départ: {path.departure_time.strftime('%H:%M')}, Arrivée: {path.arrival_time.strftime('%H:%M')}, Durée: {response['total_duration']}s")
+        
+        return jsonify(response)
+        
+    except ValueError as e:
+        logger.error(f"[TEMPORAL_PATH_ARRIVAL] Erreur de valeur: {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        logger.error(f"[TEMPORAL_PATH_ARRIVAL] Erreur lors du calcul du chemin temporel avec arrivée: {e}")
+        return jsonify({"error": "Erreur interne du serveur"}), 500
+
 @temporal_bp.route('/alternatives', methods=['POST'])
 def get_alternative_paths():
     """

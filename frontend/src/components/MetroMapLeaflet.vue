@@ -203,6 +203,15 @@ async function fetchStations() {
           position: station.position
         }
       })
+    
+    // Charger aussi allStations pour les trajets temporels
+    allStations.value = data.stations.filter(s => s.position && Array.isArray(s.position) && s.position.length === 2)
+      .map(station => ({
+        id: station.ids && station.ids.length > 0 ? station.ids[0] : station.id,
+        name: station.name,
+        lines: station.lines,
+        position: station.position
+      }))
   } catch (error) {
     console.error('Erreur lors du chargement des stations:', error)
   }
@@ -210,14 +219,13 @@ async function fetchStations() {
 
 // Charger toutes les stations uniques depuis notre nouvelle API
 function getLatLng(station) {
-  // Gérer différents formats de station
+  // On attend station.position = [lat, lng] (et non [lng, lat])
   let x, y;
 
   if (station.position) {
-    // Format [x, y]
+    // Format [lat, lng]
     [x, y] = station.position;
   } else if (station.x !== undefined && station.y !== undefined) {
-    // Format { x, y }
     x = station.x;
     y = station.y;
   } else {
@@ -226,7 +234,7 @@ function getLatLng(station) {
     return [0, 0];
   }
 
-  return [x/1000, y/1000];
+  return [x/1000, y/1000]; // [lat, lng] pour Leaflet
 }
 
 function getStationType(station) {
@@ -410,6 +418,9 @@ watch(pathDetails, (newPathDetails) => {
     return
   }
 
+  console.log('[MetroMapLeaflet] pathDetails reçus:', newPathDetails)
+  console.log('[MetroMapLeaflet] allStations disponibles:', allStations.value.length)
+
   // Remettre à zéro le chemin sur la carte
   shortestPath.value = []
 
@@ -418,6 +429,13 @@ watch(pathDetails, (newPathDetails) => {
     // Détecter le format des données
     const isShortestPathFormat = segment.hasOwnProperty('Ligne') && segment.hasOwnProperty('Stations')
     const isTemporalFormat = segment.hasOwnProperty('line') && segment.hasOwnProperty('stations')
+    
+    console.log(`[MetroMapLeaflet] Segment ${segmentIndex}:`, {
+      isShortestPathFormat,
+      isTemporalFormat,
+      line: segment.line || segment.Ligne,
+      stationsCount: segment.stations?.length || segment.Stations?.length
+    })
     
     let line, stations
     
@@ -474,9 +492,18 @@ watch(pathDetails, (newPathDetails) => {
           if (station && station.position && station.position.length === 2) {
             const latLng = getLatLng({ position: station.position })
             pathCoordinates.push(latLng)
+          } else {
+            console.warn(`[MetroMapLeaflet] Station non trouvée: ${stationName}`)
           }
         })
       }
+
+      console.log(`[MetroMapLeaflet] Segment temporel ${segmentIndex}:`, {
+        line,
+        stationsCount: stations.length,
+        pathCoordinatesCount: pathCoordinates.length,
+        pathCoordinates: pathCoordinates.slice(0, 3) // Afficher les 3 premiers points
+      })
 
       if (pathCoordinates.length >= 2) {
         shortestPath.value.push({
@@ -491,6 +518,8 @@ watch(pathDetails, (newPathDetails) => {
       }
     }
   })
+  
+  console.log('[MetroMapLeaflet] shortestPath final:', shortestPath.value.length, 'segments')
 }, { deep: true })
 
 onMounted(async () => {

@@ -75,6 +75,7 @@ def create_app(config_class=None):
                 'POST /cache/reload': 'Recharger les données depuis GTFS',
                 'GET /performance/test': 'Test de performance',
                 'POST /temporal/path': 'Chemin temporel optimal avec horaires',
+                'POST /temporal/path-arrival': 'Chemin temporel optimal avec horaire d\'arrivée souhaitée',
                 'POST /temporal/alternatives': 'Chemins alternatifs temporels',
                 'GET /temporal/stations': 'Liste des stations pour calculs temporels',
                 'GET /temporal/station/{station}/lines': 'Lignes desservant une station',
