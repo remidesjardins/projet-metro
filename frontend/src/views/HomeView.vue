@@ -42,6 +42,8 @@ const acpmPath = ref([])
 const acpmTotalWeight = ref(null)
 const showLines = ref(false)
 const linesPolylines = ref([])
+const air_conditioned_lines = ["1", "2", "5", "9", "11", "14", "A"]
+const partial_air_conditioned_lines = ["4", "B", "C", "D"]
 
 // Mapping des couleurs pour les lignes de métro avec saturation augmentée pour meilleur contraste
 const LINE_COLORS = {
@@ -1173,6 +1175,9 @@ function darkenColor(hex, factor = 0.7) {
             <div class="segment-content">
               <div class="segment-header">
                 <span class="segment-title">Ligne {{ segment.line }}</span>
+                <span class="segment-air-conditioning" v-if="air_conditioned_lines.includes(segment.line)">Climatisé</span>
+                <span class="segment-partial-air-conditioning" v-else-if="partial_air_conditioned_lines.includes(segment.line)">Partiellement climatisé</span>
+                <span class="segment-no-air-conditioning" v-else>Non climatisé</span>
                 <span class="segment-duration">{{ formatTime(segment.duration) }}</span>
                 <!-- Informations temporelles pour le mode temporel -->
                 <div v-if="searchMode === 'temporal' && segment.departure_time" class="segment-times">
@@ -1603,6 +1608,31 @@ div[style*="top: var(--spacing-xl)"] {
   color: rgba(255, 255, 255, 0.95);
   flex: 1;
   min-width: 0;
+}
+
+.segment-air-conditioning,
+.segment-partial-air-conditioning,
+.segment-no-air-conditioning {
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.15);
+  padding: 4px 10px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.segment-air-conditioning {
+  background-color: rgba(0, 255, 0, 0.2);
+}
+
+.segment-partial-air-conditioning {
+  background-color: rgba(255, 193, 7, 0.2);
+}
+
+.segment-no-air-conditioning {
+  background-color: rgba(255, 0, 0, 0.2);
 }
 
 .segment-duration {
