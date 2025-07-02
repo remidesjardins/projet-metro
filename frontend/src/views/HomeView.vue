@@ -1,8 +1,12 @@
 <script setup>
 import MetroMapLeaflet from '../components/MetroMapLeaflet.vue'
 import ServerStatus from '../components/ServerStatus.vue'
+import ErrorNotification from '../components/ErrorNotification.vue'
+import SuccessNotification from '../components/SuccessNotification.vue'
+import LoadingNotification from '../components/LoadingNotification.vue'
 import { ref, provide, onMounted, computed, watch } from 'vue'
 import { api } from '../services/api'
+import { notificationService } from '../services/notificationService'
 
 const pathDetails = ref([])
 const pathLength = ref({
@@ -31,6 +35,24 @@ const departureTime = ref('08:30')
 const departureDate = ref('2024-03-15')
 // Ajout : type d'heure (départ/arrivée)
 const timeType = ref('departure') // 'departure' ou 'arrival'
+
+// Toggle pour inclure/exclure les RER
+const includeRER = ref(true)
+
+// Notifications
+const errorState = notificationService.getErrorState()
+const successState = notificationService.getSuccessState()
+
+// État de chargement global
+const loadingState = ref({
+  show: false,
+  title: 'Chargement en cours',
+  message: 'Veuillez patienter...',
+  progress: 0,
+  currentStep: null,
+  totalSteps: null,
+  canCancel: false
+})
 
 // Debouncing pour les suggestions
 const startStationDebounce = ref(null)
@@ -62,7 +84,12 @@ const LINE_COLORS = {
   '11': '#8D5E2A',  // Marron clair - ligne 11
   '12': '#007E52',  // Vert foncé - ligne 12
   '13': '#73C0E9',  // Bleu clair - ligne 13
-  '14': '#662483'   // Violet - ligne 14
+  '14': '#662483',  // Violet - ligne 14
+  'A': '#EB2132',  // Rouge - RER A
+  'B': '#5091CB',  // Bleu - RER B
+  'C': '#FFCC30',  // Jaune - RER C
+  'D': '#008B5B',  // Vert - RER D
+  'E': '#B94E9A'   // Violet - RER E
 }
 
 // Fournir ces valeurs aux composants enfants
@@ -233,9 +260,13 @@ onMounted(() => {
 })
 
 onMounted(async () => {
+  await loadStations()
+})
+
+async function loadStations() {
   try {
     // console.log('Chargement des stations...')
-    const res = await api.getStationsList()
+    const res = await api.getStationsList(includeRER.value)
     // console.log('Résultat API:', res)
     allStations.value = res.stations
     // console.log('Stations chargées:', allStations.value.length)
@@ -243,13 +274,17 @@ onMounted(async () => {
     stationLinesMap.value = Object.fromEntries(
       res.stations.map(s => [s.name, s.lines])
     )
+    
+    // Afficher une notification de succès
+    notificationService.showLoadSuccess(`${res.stations.length} stations chargées avec succès`)
     // console.log('Map des lignes créée:', Object.keys(stationLinesMap.value).length)
   } catch (e) {
     console.error('Erreur lors du chargement des stations:', e)
+    notificationService.handleApiError(e, 'loadStations')
     allStations.value = []
     stationLinesMap.value = {}
   }
-})
+}
 
 function handleStartStationInput() {
   // console.log('handleStartStationInput appelé avec:', startStation.value)
@@ -423,6 +458,7 @@ async function fetchACPM() {
     console.log('Chemins ACPM traités:', acpmPath.value.length)
   } catch (error) {
     console.error('Erreur lors du chargement de l\'ACPM:', error)
+    notificationService.handleApiError(error, 'fetchACPM')
   }
 }
 
@@ -488,6 +524,7 @@ async function fetchLines() {
     console.log('Détail des polylines:', linesPolylines.value)
   } catch (error) {
     console.error('Erreur lors du chargement des lignes:', error)
+    notificationService.handleApiError(error, 'fetchLines')
   }
 }
 
@@ -498,11 +535,27 @@ function clearPath() {
   // console.log('Chemin effacé')
 }
 
+// Fonction pour gérer le changement du toggle RER
+async function toggleRER() {
+  includeRER.value = !includeRER.value
+  // Recharger les stations avec le nouveau paramètre
+  await loadStations()
+  // Effacer les résultats actuels car ils peuvent ne plus être valides
+  clearPath()
+  // Effacer les sélections de stations
+  startStation.value = ''
+  endStation.value = ''
+  startStationId.value = ''
+  endStationId.value = ''
+  startStationSuggestions.value = []
+  endStationSuggestions.value = []
+}
+
 function validateTimeInput() {
   const timePattern = /^([0-2]?[0-9]|3[0-1]):([0-5][0-9])$/;
   
   if (!timePattern.test(departureTime.value)) {
-    alert('Format d\'heure invalide. Utilisez HH:MM (ex: 08:30, 24:30 pour 00:30 du lendemain)');
+    notificationService.showValidationError('Format d\'heure invalide. Utilisez HH:MM (ex: 08:30, 24:30 pour 00:30 du lendemain)');
     return false;
   }
   
@@ -510,13 +563,13 @@ function validateTimeInput() {
   
   // Valider les heures (0-31 pour permettre les heures après minuit)
   if (hours < 0 || hours > 31) {
-    alert('Heures invalides. Utilisez 0-23 pour le jour même, 24-31 pour le lendemain');
+    notificationService.showValidationError('Heures invalides. Utilisez 0-23 pour le jour même, 24-31 pour le lendemain');
     return false;
   }
   
   // Valider les minutes (0-59)
   if (minutes < 0 || minutes > 59) {
-    alert('Minutes invalides. Utilisez 0-59');
+    notificationService.showValidationError('Minutes invalides. Utilisez 0-59');
     return false;
   }
   
@@ -526,153 +579,64 @@ function validateTimeInput() {
 
 async function findPath() {
   if (!startStation.value || !endStation.value) {
-    alert('Veuillez sélectionner une station de départ et d\'arrivée');
+    notificationService.showValidationError('Veuillez sélectionner une station de départ et d\'arrivée');
     return;
   }
-
-  isLoading.value = true;
+  loadingState.value = {
+    show: true,
+    title: 'Recherche d\'itinéraires',
+    message: 'Calcul des meilleurs chemins...',
+    progress: 0,
+    currentStep: null,
+    totalSteps: null,
+    canCancel: false
+  };
   pathDetails.value = [];
   pathLength.value = { duration: null, emissions: null, stationsCount: null };
   temporalData.value = null;
+  alternativePaths.value = [];
+  selectedAlternativeIndex.value = null;
 
+  const t0 = performance.now();
   try {
     if (searchMode.value === 'temporal') {
-      // Recherche temporelle
+      // Recherche des 3 meilleurs chemins
       let response;
-      if (timeType.value === 'departure') {
-        response = await api.post('/temporal/path', {
-          start_station: startStation.value,
-          end_station: endStation.value,
-          departure_time: departureTime.value,
-          date: departureDate.value,
-          max_paths: 3,
-          max_wait_time: 1800
-        });
-      } else {
-        response = await api.post('/temporal/path-arrival', {
+      if (timeType.value === 'arrival') {
+        response = await api.getTemporalAlternativesArrival({
           start_station: startStation.value,
           end_station: endStation.value,
           arrival_time: departureTime.value,
           date: departureDate.value,
           max_paths: 3,
-          max_wait_time: 1800
+          max_wait_time: 1800,
+          include_rer: includeRER.value
+        });
+      } else {
+        response = await api.getTemporalAlternatives({
+          start_station: startStation.value,
+          end_station: endStation.value,
+          departure_time: departureTime.value,
+          date: departureDate.value,
+          max_paths: 3,
+          max_wait_time: 1800,
+          include_rer: includeRER.value
         });
       }
-      temporalData.value = response;
-      
-      // OPTIMISATION : Traitement simplifié des données
-      if (response.segments && response.segments.length > 0) {
-        // S'assurer que temporalData.value contient les segments bruts pour les fonctions getTransferTime/getWaitTime
-        temporalData.value = {
-          ...response,
-          segments: response.segments // Conserver les segments bruts
-        };
-        
-        // Regrouper les segments par ligne pour créer des segments continus
-        const segments = [];
-        let currentLine = null;
-        let currentStations = [];
-        let currentDuration = 0;
-        let currentStationTimes = {};
-        let currentTransferInfo = null;
-        let firstSegmentOfLine = null;
-        let lastSegmentOfLine = null;
-        
-        // Utiliser le chemin structurel depuis la réponse API pour obtenir toutes les stations
-        const structuralPath = response.structural_path || [];
-        
-        for (let i = 0; i < response.segments.length; i++) {
-          const segment = response.segments[i];
-          
-          if (currentLine === null) {
-            // Premier segment
-            currentLine = segment.line;
-            firstSegmentOfLine = segment;
-            lastSegmentOfLine = segment;
-            // Récupérer toutes les stations de cette ligne depuis le chemin structurel
-            currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
-            
-            // Créer les horaires pour toutes les stations de ce segment
-            currentStationTimes = createStationTimesForSegment(currentStations, segment);
-            
-          } else if (segment.line === currentLine) {
-            // Même ligne, ajouter les stations intermédiaires
-            const additionalStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
-            
-            // Fusionner les stations en évitant les doublons
-            additionalStations.forEach(station => {
-              if (!currentStations.includes(station)) {
-                currentStations.push(station);
-              }
-            });
-            
-            // Mettre à jour le dernier segment de cette ligne
-            lastSegmentOfLine = segment;
-            
-            // Mettre à jour les horaires pour les nouvelles stations
-            currentStationTimes = updateStationTimes(currentStationTimes, segment);
-            
-          } else {
-            // Changement de ligne, finaliser le segment précédent
-            // Calculer la durée réelle basée sur les horaires
-            if (firstSegmentOfLine && lastSegmentOfLine) {
-              const departureTime = new Date(`2000-01-01T${firstSegmentOfLine.departure_time}`);
-              const arrivalTime = new Date(`2000-01-01T${lastSegmentOfLine.arrival_time}`);
-              currentDuration = Math.round((arrivalTime - departureTime) / 1000); // en secondes
-            }
-            
-            segments.push({
-              line: currentLine,
-              stations: currentStations,
-              duration: currentDuration,
-              stationsCount: currentStations.length,
-              stationTimes: currentStationTimes,
-              transferInfo: currentTransferInfo
-            });
-            
-            // Commencer un nouveau segment avec les informations de transfert
-            currentLine = segment.line;
-            firstSegmentOfLine = segment;
-            lastSegmentOfLine = segment;
-            currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
-            currentTransferInfo = {
-              transferTime: segment.transfer_time,
-              waitTime: segment.wait_time,
-              transferStation: segment.from_station,
-              fromLine: segments[segments.length - 1]?.line,
-              toLine: segment.line
-            };
-            
-            // Créer les horaires pour le nouveau segment
-            currentStationTimes = createStationTimesForSegment(currentStations, segment);
-          }
-        }
-        
-        // Ajouter le dernier segment
-        if (currentStations.length > 0) {
-          // Calculer la durée réelle pour le dernier segment
-          if (firstSegmentOfLine && lastSegmentOfLine) {
-            const departureTime = new Date(`2000-01-01T${firstSegmentOfLine.departure_time}`);
-            const arrivalTime = new Date(`2000-01-01T${lastSegmentOfLine.arrival_time}`);
-            currentDuration = Math.round((arrivalTime - departureTime) / 1000); // en secondes
-          }
-          
-          segments.push({
-            line: currentLine,
-            stations: currentStations,
-            duration: currentDuration,
-            stationsCount: currentStations.length,
-            stationTimes: currentStationTimes,
-            transferInfo: currentTransferInfo
-          });
-        }
-        
-        pathDetails.value = segments;
-        pathLength.value = {
-          duration: response.total_duration,
-          emissions: response.emissions || 0,
-          stationsCount: segments.reduce((total, seg) => total + seg.stations.length, 0)
-        };
+      if (response.paths && response.paths.length > 0) {
+        alternativePaths.value = response.paths;
+        selectedAlternativeIndex.value = null;
+        temporalData.value = null;
+        pathDetails.value = [];
+        pathLength.value = { duration: null, emissions: null, stationsCount: null };
+        const t1 = performance.now();
+        notificationService.showPathFoundSuccess(
+          response.paths[0]?.total_duration || 'N/A',
+          response.paths[0]?.stations_count || response.paths[0]?.segments?.reduce((total, seg) => total + (seg.stations?.length || 0), 0),
+          Math.round(t1 - t0)
+        );
+      } else {
+        notificationService.showValidationError('Aucun itinéraire trouvé.');
       }
     } else {
       // Recherche classique
@@ -682,7 +646,8 @@ async function findPath() {
       
       const response = await api.post('/shortest-path', {
         start: startStationId.value,
-        end: endStationId.value
+        end: endStationId.value,
+        include_rer: includeRER.value
       });
       
       // Transformer les données de l'API shortest-path pour correspondre au format attendu
@@ -703,39 +668,52 @@ async function findPath() {
         emissions: response.emissions,
         stationsCount: response.stations_count
       };
+      const t1 = performance.now();
+      notificationService.showPathFoundSuccess(
+        response.duration || 'N/A',
+        response.stations_count || transformedSegments.reduce((total, seg) => total + seg.stations.length, 0),
+        Math.round(t1 - t0)
+      );
     }
   } catch (error) {
     console.error('Erreur lors de la recherche:', error);
     
-    // Vérifier si c'est une erreur de service indisponible avec des informations détaillées
+    // Utiliser le service de notifications pour gérer l'erreur
+    notificationService.handleApiError(error, 'findPath');
+    
+    // Si c'est une erreur de service avec suggestion, proposer de relancer
     if (error.responseData && error.responseData.service_info) {
       const serviceInfo = error.responseData.service_info;
-      let message = serviceInfo.message;
-      
       if (serviceInfo.suggested_departure) {
-        message += `\n\nVoulez-vous rechercher un itinéraire pour ${serviceInfo.suggested_departure} ?`;
-        
-        if (confirm(message)) {
-          // Mettre à jour l'heure de départ avec l'heure suggérée
-          departureTime.value = serviceInfo.suggested_departure;
-          // Relancer la recherche
-          findPath();
-          return;
-        }
-      } else {
-        alert(message);
+        // Ajouter une action de retry avec l'heure suggérée
+        notificationService.showErrorWithRetry(
+          serviceInfo.message,
+          () => {
+            departureTime.value = serviceInfo.suggested_departure;
+            findPath();
+          },
+          'Service indisponible'
+        );
+        return;
       }
-    } else {
-    alert(error.message || 'Erreur lors de la recherche d\'itinéraire');
     }
   } finally {
-    isLoading.value = false;
+    loadingState.value.show = false;
   }
 }
 
 async function testConnexity() {
   try {
-    isLoading.value = true
+    loadingState.value = {
+      show: true,
+      title: 'Test de connexité',
+      message: 'Analyse de la connectivité du réseau...',
+      progress: 0,
+      currentStep: null,
+      totalSteps: null,
+      canCancel: false
+    }
+    
     const url = startStation.value 
       ? `/connexity?station=${encodeURIComponent(startStation.value)}`
       : '/connexity'
@@ -743,10 +721,11 @@ async function testConnexity() {
     showConnexityModal.value = true
   } catch (error) {
     console.error('Erreur lors du test de connexité:', error)
+    notificationService.handleApiError(error, 'testConnexity')
     connexityResult.value = { error: error.message }
     showConnexityModal.value = true
   } finally {
-    isLoading.value = false
+    loadingState.value.show = false
   }
 }
 
@@ -918,6 +897,116 @@ function darkenColor(hex, factor = 0.7) {
   b = Math.floor(b * factor);
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
+
+// Ajout d'une fonction utilitaire pour déterminer le type de ligne
+function getLineType(line) {
+  if (["A", "B", "C", "D", "E"].includes(line)) return "RER";
+  if (["1","2","3","3bis","3B","4","5","6","7","7bis","7B","8","9","10","11","12","13","14"].includes(line)) return "Métro";
+  return "Autre";
+}
+
+const alternativePaths = ref([])
+const selectedAlternativeIndex = ref(null)
+
+function selectAlternativePath(index) {
+  selectedAlternativeIndex.value = index;
+  const path = alternativePaths.value[index];
+  if (!path) return;
+  // Adapter le format pour l'affichage détaillé (comme avant)
+  temporalData.value = path;
+  // ... logique de transformation pour pathDetails/pathLength ...
+  if (path.segments && path.segments.length > 0) {
+    // Regrouper les segments par ligne pour créer des segments continus
+    const segments = [];
+    let currentLine = null;
+    let currentStations = [];
+    let currentDuration = 0;
+    let currentStationTimes = {};
+    let currentTransferInfo = null;
+    let firstSegmentOfLine = null;
+    let lastSegmentOfLine = null;
+    const structuralPath = path.structural_path || [];
+    for (let i = 0; i < path.segments.length; i++) {
+      const segment = path.segments[i];
+      if (currentLine === null) {
+        currentLine = segment.line;
+        firstSegmentOfLine = segment;
+        lastSegmentOfLine = segment;
+        currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
+        currentStationTimes = createStationTimesForSegment(currentStations, segment);
+      } else if (segment.line === currentLine) {
+        const additionalStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
+        additionalStations.forEach(station => {
+          if (!currentStations.includes(station)) {
+            currentStations.push(station);
+          }
+        });
+        lastSegmentOfLine = segment;
+        currentStationTimes = updateStationTimes(currentStationTimes, segment);
+      } else {
+        if (firstSegmentOfLine && lastSegmentOfLine) {
+          const departureTime = new Date(`2000-01-01T${firstSegmentOfLine.departure_time}`);
+          const arrivalTime = new Date(`2000-01-01T${lastSegmentOfLine.arrival_time}`);
+          currentDuration = Math.round((arrivalTime - departureTime) / 1000);
+        }
+        segments.push({
+          line: currentLine,
+          stations: currentStations,
+          duration: currentDuration,
+          stationsCount: currentStations.length,
+          stationTimes: currentStationTimes,
+          transferInfo: currentTransferInfo
+        });
+        currentLine = segment.line;
+        firstSegmentOfLine = segment;
+        lastSegmentOfLine = segment;
+        currentStations = getStationsForLine(structuralPath, segment.line, segment.from_station, segment.to_station);
+        currentTransferInfo = {
+          transferTime: segment.transfer_time,
+          waitTime: segment.wait_time,
+          transferStation: segment.from_station,
+          fromLine: segments[segments.length - 1]?.line,
+          toLine: segment.line
+        };
+        currentStationTimes = createStationTimesForSegment(currentStations, segment);
+      }
+    }
+    if (currentStations.length > 0) {
+      if (firstSegmentOfLine && lastSegmentOfLine) {
+        const departureTime = new Date(`2000-01-01T${firstSegmentOfLine.departure_time}`);
+        const arrivalTime = new Date(`2000-01-01T${lastSegmentOfLine.arrival_time}`);
+        currentDuration = Math.round((arrivalTime - departureTime) / 1000);
+      }
+      segments.push({
+        line: currentLine,
+        stations: currentStations,
+        duration: currentDuration,
+        stationsCount: currentStations.length,
+        stationTimes: currentStationTimes,
+        transferInfo: currentTransferInfo
+      });
+    }
+    pathDetails.value = segments;
+    pathLength.value = {
+      duration: path.total_duration,
+      emissions: path.emissions || 0,
+      stationsCount: segments.reduce((total, seg) => total + seg.stations.length, 0)
+    };
+  }
+}
+
+// Ajout d'une fonction utilitaire pour dédupliquer les lignes d'un chemin alternatif
+function getUniqueLines(segments) {
+  const seen = new Set();
+  const result = [];
+  for (const seg of segments) {
+    if (!seen.has(seg.line)) {
+      seen.add(seg.line);
+      result.push(seg.line);
+    }
+  }
+  return result;
+}
 </script>
 
 <template>
@@ -978,6 +1067,11 @@ function darkenColor(hex, factor = 0.7) {
               @click="selectStartStation(suggestion)"
             >
               {{ suggestion }}
+              <span v-if="stationLinesMap[suggestion] && stationLinesMap[suggestion].length > 0" class="suggestion-lines">
+                <span v-for="line in stationLinesMap[suggestion]" :key="line" :class="['suggestion-line-badge', getLineType(line) === 'RER' ? 'rer-badge' : 'metro-badge']" :style="{ backgroundColor: LINE_COLORS[line] || '#1976d2', color: '#fff' }">
+                  {{ line }}
+                </span>
+              </span>
             </div>
           </div>
         </div>
@@ -1003,6 +1097,11 @@ function darkenColor(hex, factor = 0.7) {
               @click="selectEndStation(suggestion)"
             >
               {{ suggestion }}
+              <span v-if="stationLinesMap[suggestion] && stationLinesMap[suggestion].length > 0" class="suggestion-lines">
+                <span v-for="line in stationLinesMap[suggestion]" :key="line" :class="['suggestion-line-badge', getLineType(line) === 'RER' ? 'rer-badge' : 'metro-badge']" :style="{ backgroundColor: LINE_COLORS[line] || '#1976d2', color: '#fff' }">
+                  {{ line }}
+                </span>
+              </span>
             </div>
           </div>
         </div>
@@ -1101,14 +1200,62 @@ function darkenColor(hex, factor = 0.7) {
               </button>
             </div>
           </div>
+
+          <!-- Section des options RER -->
+          <div class="rer-section">
+            <div class="section-title">
+              <span>Options de transport</span>
+            </div>
+            
+            <div class="rer-toggle-container">
+              <button 
+                :class="['rer-toggle-button', { active: includeRER }]"
+                @click="toggleRER"
+              >
+                <span class="rer-toggle-icon"></span>
+                <span class="rer-toggle-text">
+                  {{ includeRER ? 'RER inclus' : 'RER exclus' }}
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Panneau d'affichage des résultats superposé -->
-    <div v-if="pathDetails && pathDetails.length > 0" class="floating-panel fade-in">
+    <div v-if="alternativePaths && alternativePaths.length > 0 && selectedAlternativeIndex === null" class="floating-panel fade-in">
       <div class="content-wrapper">
         <div class="path-panel-header">
+          <h2>Meilleurs itinéraires</h2>
+        </div>
+        <div class="alternative-paths-list">
+          <div
+            v-for="(alt, idx) in alternativePaths"
+            :key="idx"
+            :class="['alternative-path-summary', { selected: selectedAlternativeIndex === idx }]"
+            @click="selectAlternativePath(idx)"
+          >
+            <div class="alt-lines">
+              <span v-for="line in getUniqueLines(alt.segments)" :key="line" :class="['suggestion-line-badge', getLineType(line) === 'RER' ? 'rer-badge' : 'metro-badge']" :style="{ backgroundColor: LINE_COLORS[line] || '#1976d2', color: '#fff' }">
+                {{ line }}
+              </span>
+            </div>
+            <div class="alt-times">
+              <span class="alt-departure">Départ: {{ alt.departure_time }}</span>
+              <span class="alt-arrival">Arrivée: {{ alt.arrival_time }}</span>
+              <span class="alt-duration">Durée: {{ formatTime(alt.total_duration) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div v-if="(selectedAlternativeIndex !== null && pathDetails && pathDetails.length > 0) || (alternativePaths.length === 0 && pathDetails && pathDetails.length > 0)" class="floating-panel fade-in">
+      <div class="content-wrapper">
+        <div class="path-panel-header">
+          <button v-if="alternativePaths.length > 0" class="back-button" @click="selectedAlternativeIndex = null" title="Retour aux choix" style="margin-right: 16px;">
+            ←
+          </button>
           <h2>Itinéraire {{ searchMode === 'temporal' ? 'temporel' : '' }}</h2>
           <div class="total-time-badge">
             <span class="time-icon"></span>
@@ -1336,6 +1483,11 @@ function darkenColor(hex, factor = 0.7) {
                 @click="selectStartStation(suggestion)"
               >
                 {{ suggestion }}
+                <span v-if="stationLinesMap[suggestion] && stationLinesMap[suggestion].length > 0" class="suggestion-lines">
+                  <span v-for="line in stationLinesMap[suggestion]" :key="line" :class="['suggestion-line-badge', getLineType(line) === 'RER' ? 'rer-badge' : 'metro-badge']" :style="{ backgroundColor: LINE_COLORS[line] || '#1976d2', color: '#fff' }">
+                    {{ line }}
+                  </span>
+                </span>
               </div>
             </div>
           </div>
@@ -1364,6 +1516,39 @@ function darkenColor(hex, factor = 0.7) {
       </div>
     </div>
   </main>
+
+  <!-- Notifications -->
+  <ErrorNotification
+    :show="errorState.show"
+    :title="errorState.title"
+    :message="errorState.message"
+    :details="errorState.details"
+    :retry-action="errorState.retryAction"
+    :auto-close="errorState.autoClose"
+    :auto-close-delay="errorState.autoCloseDelay"
+    @close="notificationService.hideError()"
+    @retry="notificationService.hideError()"
+  />
+
+  <SuccessNotification
+    :show="successState.show"
+    :title="successState.title"
+    :message="successState.message"
+    :auto-close="successState.autoClose"
+    :auto-close-delay="successState.autoCloseDelay"
+    @close="notificationService.hideSuccess()"
+  />
+
+  <LoadingNotification
+    :show="loadingState.show"
+    :title="loadingState.title"
+    :message="loadingState.message"
+    :progress="loadingState.progress"
+    :current-step="loadingState.currentStep"
+    :total-steps="loadingState.totalSteps"
+    :can-cancel="loadingState.canCancel"
+    @cancel="loadingState.show = false"
+  />
 </template>
 
 <style scoped>
@@ -1458,6 +1643,8 @@ html, body {
   overflow: hidden;
   z-index: 1000;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
 }
 
 .floating-panel::before {
@@ -1478,11 +1665,9 @@ html, body {
   border-radius: 18px;
   padding: 20px;
   position: relative;
-  z-index: 1;
-  max-height: calc(100vh - 80px);
+  flex: 1 1 auto;
   overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
+  max-height: calc(100vh - 80px);
 }
 
 .content-wrapper::-webkit-scrollbar {
@@ -2594,576 +2779,7 @@ div[style*="top: var(--spacing-xl)"] {
   overflow-y: auto;
   max-height: calc(100vh - 40px);
   display: flex;
-    flex-direction: column;
-}
-
-.panel-header {
-  padding: 28px 24px 20px;
-  border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.panel-header h2 {
-  margin: 0 0 20px 0;
-  font-size: 34px;
-  font-weight: 700;
-  letter-spacing: -0.8px;
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: none;
-}
-
-.mode-toggle {
-  display: flex;
-  background: rgba(0, 0, 0, 0.15);
-  border-radius: 16px;
-  padding: 3px;
-  gap: 2px;
-  backdrop-filter: blur(20px);
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
-}
-
-.toggle-btn {
-  flex: 1;
-  padding: 14px 20px;
-  border: none;
-  border-radius: 13px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: 700;
-  font-size: 17px;
-  letter-spacing: -0.3px;
-  cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  position: relative;
-}
-
-.toggle-btn.active {
-  background: rgba(255, 255, 255, 0.25);
-  color: rgba(255, 255, 255, 0.95);
-  box-shadow: 
-    0 2px 12px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  backdrop-filter: blur(20px);
-}
-
-.toggle-btn:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
-}
-
-/* Styles pour les suggestions - Apple Style */
-.suggestions-list {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(40px);
-  border-radius: 16px;
-  box-shadow: 
-    0 20px 40px rgba(0, 0, 0, 0.15),
-    0 4px 12px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  border: 0.5px solid rgba(255, 255, 255, 0.6);
-  z-index: 1001;
-  max-height: 280px;
-    overflow-y: auto;
-  margin-top: 6px;
-  animation: slideDown 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-.suggestion-item {
-  padding: 16px 20px;
-  cursor: pointer;
-  color: #1d1d1f;
-  font-weight: 500;
-  font-size: 16px;
-  letter-spacing: -0.2px;
-  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-  border-bottom: 0.5px solid rgba(0, 0, 0, 0.06);
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  position: relative;
-}
-
-.suggestion-item:last-child {
-  border-bottom: none;
-  border-bottom-left-radius: 16px;
-  border-bottom-right-radius: 16px;
-}
-
-.suggestion-item:first-child {
-  border-top-left-radius: 16px;
-  border-top-right-radius: 16px;
-}
-
-.suggestion-item:hover {
-  background: rgba(0, 0, 0, 0.04);
-  color: #000;
-  transform: translateX(2px);
-}
-
-.suggestion-item::before {
-  content: '';
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #007AFF, #5AC8FA);
-  opacity: 0.8;
-  flex-shrink: 0;
-}
-
-/* Styles pour la section temporelle */
-.temporal-section {
-  margin-top: 20px;
-  padding: 20px;
-  background: rgba(0, 0, 0, 0.1);
-  border-radius: 18px;
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px);
-}
-
-.temporal-header {
-  margin-bottom: 16px;
-}
-
-.temporal-title {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: -0.4px;
-  color: rgba(255, 255, 255, 0.95);
-}
-
-.temporal-inputs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-    gap: 16px;
-  }
-  
-.temporal-inputs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-    gap: 12px;
-  }
-  
-/* Styles pour les informations temporelles */
-.temporal-info {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
-  border-radius: 20px;
-  padding: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(25px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  position: relative;
-  overflow: hidden;
-}
-
-.temporal-info::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent);
-  border-radius: 20px;
-  z-index: -1;
-}
-
-.temporal-details {
-  display: flex;
-    flex-direction: column;
-  gap: var(--spacing-md);
-}
-
-.temporal-details .detail-item {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  font-size: 15px;
-  color: rgba(255, 255, 255, 0.95);
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  transition: all 0.3s ease;
-}
-
-.temporal-details .detail-item:hover {
-  background: rgba(255, 255, 255, 0.2);
-  border-color: rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
-}
-
-.clock-icon {
-  width: 16px;
-  height: 16px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='10'%3E%3C/circle%3E%3Cpolyline points='12 6 12 12 16 14'%3E%3C/polyline%3E%3C/svg%3E");
-  background-size: contain;
-  opacity: 0.8;
-}
-
-.wait-icon {
-  width: 16px;
-  height: 16px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2v6m0 6v6'%3E%3C/path%3E%3Cpath d='M23 12h-6m-6 0H1'%3E%3C/path%3E%3C/svg%3E");
-  background-size: contain;
-  opacity: 0.8;
-}
-
-.segment-times {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-  margin-top: 4px;
-}
-
-.departure-time, .arrival-time {
-  background: rgba(255, 255, 255, 0.1);
-  padding: 2px 8px;
-  border-radius: 8px;
-  font-weight: 500;
-}
-
-.arrow {
-  color: rgba(255, 255, 255, 0.6);
-  font-weight: bold;
-}
-
-/* Styles pour les éléments d'affichage des stations */
-.station-time-item {
-  display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 12px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-  width: 100%;
-}
-
-.station-time-item:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.3);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-}
-
-.station-time-item.interchange {
-  background: linear-gradient(135deg, rgba(255, 193, 7, 0.2), rgba(255, 193, 7, 0.1));
-  border-color: rgba(255, 193, 7, 0.4);
-}
-
-.station-main-row {
-  display: flex;
-    justify-content: space-between;
-    align-items: center;
-    width: 100%;
-  gap: 12px;
-}
-
-.station-info {
-  display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-}
-
-.station-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.98);
-  flex: 1;
-  min-width: 0;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.interchange-badge {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: rgba(255, 193, 7, 0.9);
-  background: rgba(255, 193, 7, 0.2);
-  padding: 2px 6px;
-  border-radius: 4px;
-    align-self: flex-start;
-  }
-  
-.station-times-right {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 6px;
-  min-width: 120px;
-  flex-shrink: 0;
-}
-
-.station-times-container {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-items: flex-end;
-}
-
-.time-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-  min-width: 0;
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.time-badge.glassmorphism {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.15));
-  backdrop-filter: blur(25px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  position: relative;
-  overflow: hidden;
-  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.time-badge.glassmorphism.departure {
-  background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.15));
-  border-color: rgba(76, 175, 80, 0.4);
-}
-
-.time-badge.glassmorphism.arrival {
-  background: linear-gradient(135deg, rgba(255, 152, 0, 0.25), rgba(255, 152, 0, 0.15));
-  border-color: rgba(255, 152, 0, 0.4);
-}
-
-.time-badge.glassmorphism::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent 50%, rgba(255, 255, 255, 0.05));
-  border-radius: 12px;
-  z-index: -1;
-}
-
-.time-badge.glassmorphism.departure::before {
-  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), transparent 50%, rgba(76, 175, 80, 0.05));
-}
-
-.time-badge.glassmorphism.arrival::before {
-  background: linear-gradient(135deg, rgba(255, 152, 0, 0.1), transparent 50%, rgba(255, 152, 0, 0.05));
-}
-
-.time-badge.glassmorphism:hover {
-  transform: translateY(-2px);
-  box-shadow: 
-    0 12px 40px rgba(0, 0, 0, 0.15),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  border-color: rgba(255, 255, 255, 0.4);
-}
-
-.time-badge.glassmorphism.departure:hover {
-  border-color: rgba(76, 175, 80, 0.5);
-  box-shadow: 
-    0 12px 40px rgba(76, 175, 80, 0.2),
-    inset 0 1px 0 rgba(76, 175, 80, 0.3);
-}
-
-.time-badge.glassmorphism.arrival:hover {
-  border-color: rgba(255, 152, 0, 0.5);
-  box-shadow: 
-    0 12px 40px rgba(255, 152, 0, 0.2),
-    inset 0 1px 0 rgba(255, 152, 0, 0.3);
-}
-
-.time-content {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
-  min-width: 0;
-  align-items: center;
-}
-
-.time-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  opacity: 0.9;
-  color: rgba(255, 255, 255, 0.95);
-  white-space: nowrap;
-}
-
-.time-value {
-  font-size: 14px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.98);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  white-space: nowrap;
-}
-
-.trip-info-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-  gap: 12px;
-  margin-bottom: 20px;
-  padding: 16px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.1));
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  backdrop-filter: blur(25px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-}
-
-.info-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-  text-align: center;
-}
-
-.info-label {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  color: rgba(255, 255, 255, 0.9);
-  text-align: center;
-  white-space: nowrap;
-}
-
-.info-value {
-  font-size: 14px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.98);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  text-align: center;
-  white-space: nowrap;
-}
-
-.total-time-badge {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: linear-gradient(135deg, rgba(76, 175, 80, 0.3), rgba(76, 175, 80, 0.2));
-  border-radius: 12px;
-  border: 1px solid rgba(76, 175, 80, 0.4);
-  backdrop-filter: blur(20px);
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 4px 16px rgba(76, 175, 80, 0.3);
-}
-
-.emissions-icon {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 13l3 3 7-7'%3E%3C/path%3E%3Cpath d='M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z'%3E%3C/path%3E%3C/svg%3E");
-}
-
-.stations-icon {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='3'%3E%3C/circle%3E%3Cpath d='M12 1v6m0 6v6'%3E%3C/path%3E%3Cpath d='M23 12h-6m-6 0H1'%3E%3C/path%3E%3C/svg%3E");
-}
-
-.acpm-icon {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z'%3E%3C/path%3E%3Cpolyline points='3.27,6.96 12,12.01 20.73,6.96'%3E%3C/polyline%3E%3Cline x1='12' y1='22.08' x2='12' y2='12'%3E%3C/line%3E%3C/svg%3E");
-}
-
-.acpm-info {
-  background: linear-gradient(135deg, rgba(255, 193, 7, 0.2), rgba(255, 193, 7, 0.1));
-  border: 1px solid rgba(255, 193, 7, 0.3);
-}
-
-/* ...existing code... */
-
-/* ✅ MODIFICATION : Responsive pour le nouveau panneau */
-@media (max-width: 768px) {
-  .trip-info-panel {
-    grid-template-columns: 1fr;
-    gap: var(--spacing-xs);
-  }
-  
-  .info-item {
-    flex-direction: row;
-    justify-content: space-between;
-    text-align: left;
-  }
-  
-  .info-value {
-    margin-left: auto;
-  }
-}
-
-/* Styles pour le composant temporel */
-
-@media (max-width: 768px) {
-}
-
-/* Styles pour le panneau de contrôle unifié - Style Apple Glassmorphism */
-.unified-control-panel {
-  position: absolute;
-  top: 20px;
-  left: 20px;
-  z-index: 1000;
-  width: 400px;
-  background: linear-gradient(135deg, rgba(89, 95, 207, 0.8), rgba(81, 171, 187, 0.8));
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  border-radius: 40px;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-  padding: 2px;
-  overflow: hidden;
-  max-height: calc(100vh - 40px);
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif;
-}
-
-.panel-container {
-  background: linear-gradient(145deg, rgba(61, 81, 181, 0.8), rgba(81, 162, 171, 0.8));
-  backdrop-filter: blur(15px);
-  -webkit-backdrop-filter: blur(15px);
-  border-radius: 38px;
-  padding: 0;
-  overflow-y: auto;
-  max-height: calc(100vh - 40px);
-  display: flex;
-    flex-direction: column;
 }
 
 .panel-header {
@@ -4607,6 +4223,314 @@ div[style*="top: var(--spacing-xl)"] {
   color: #4CAF50;
   font-weight: 600;
 }
+
+/* Styles pour la section RER */
+.rer-section {
+  margin-top: 20px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.08));
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 20px;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+}
+
+.rer-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 50%, rgba(255, 255, 255, 0.02));
+  border-radius: 20px;
+  z-index: -1;
+}
+
+.rer-toggle-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.rer-toggle-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  backdrop-filter: blur(20px);
+  box-shadow: 
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 4px 12px rgba(0, 0, 0, 0.1);
+  position: relative;
+  overflow: hidden;
+  min-width: 180px;
+  justify-content: center;
+}
+
+.rer-toggle-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 50%, rgba(255, 255, 255, 0.03));
+  border-radius: 14px;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.rer-toggle-button:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15), rgba(255, 255, 255, 0.08));
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 
+    0 8px 20px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.rer-toggle-button:hover::before {
+  opacity: 1;
+}
+
+.rer-toggle-button.active {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.3), rgba(76, 175, 80, 0.15));
+  border-color: rgba(76, 175, 80, 0.4);
+  color: rgba(255, 255, 255, 0.95);
+  box-shadow: 
+    0 8px 20px rgba(76, 175, 80, 0.2),
+    inset 0 1px 0 rgba(76, 175, 80, 0.2);
+}
+
+.rer-toggle-button.active::before {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), transparent 50%, rgba(76, 175, 80, 0.05));
+  opacity: 1;
+}
+
+.rer-toggle-button:active {
+  transform: translateY(0);
+  box-shadow: 
+    0 4px 12px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.rer-toggle-icon {
+  width: 20px;
+  height: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 12h18'%3E%3C/path%3E%3Cpath d='M3 6h18'%3E%3C/path%3E%3Cpath d='M3 18h18'%3E%3C/path%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.8;
+  transition: opacity 0.3s ease;
+}
+
+.rer-toggle-button:hover .rer-toggle-icon {
+  opacity: 1;
+}
+
+.rer-toggle-text {
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+/* Responsive pour le toggle RER */
+@media (max-width: 768px) {
+  .rer-toggle-button {
+    padding: 14px 20px;
+    font-size: 14px;
+    min-width: 160px;
+  }
+  
+  .rer-toggle-icon {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.suggestion-lines {
+  display: inline-block;
+  margin-left: 8px;
+}
+.suggestion-line-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 18px;
+  margin-right: 8px;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  border: 2.5px solid #fff;
+  letter-spacing: 0.5px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  text-align: center;
+  line-height: 36px;
+  vertical-align: middle;
+}
+.metro-badge {
+  border-radius: 50%;
+}
+.rer-badge {
+  border-radius: 12px;
+}
+.suggestion-line-circle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.18);
+  font-weight: bold;
+  font-size: 13px;
+  margin-right: 4px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+}
+.suggestion-line-type {
+  color: #fff;
+  font-size: 11px;
+  margin-left: 2px;
+  opacity: 0.8;
+}
+
+.suggestion-line-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 14px;
+  margin-right: 6px;
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.08);
+  border: 2px solid #fff;
+  letter-spacing: 0.5px;
+}
+.metro-badge {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+.rer-badge {
+  width: 26px;
+  height: 24px;
+  border-radius: 8px;
+}
+
+.alternative-paths-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin-bottom: 16px;
+  background: linear-gradient(135deg, rgba(89, 95, 207, 0.85), rgba(81, 171, 187, 0.85));
+  border-radius: 24px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18), 0 1.5px 8px rgba(0,0,0,0.08);
+  padding: 32px 28px 24px 28px;
+  border: 1.5px solid rgba(255,255,255,0.22);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+  z-index: 2000;
+  font-family: -apple-system, BlinkMacSystemFont, 'San Francisco', 'Helvetica Neue', Arial, sans-serif;
+}
+.alternative-path-summary {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.10));
+  border-radius: 16px;
+  padding: 18px 22px;
+  cursor: pointer;
+  border: 2.5px solid transparent;
+  transition: border 0.2s, background 0.2s, box-shadow 0.2s;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  font-family: inherit;
+}
+.alternative-path-summary.selected {
+  border: 2.5px solid #fff;
+  background: linear-gradient(135deg, rgba(255,255,255,0.28), rgba(255,255,255,0.18));
+  box-shadow: 0 8px 32px rgba(89, 95, 207, 0.18);
+}
+
+/* S'assurer que la modale de choix masque bien la modale détaillée */
+.floating-panel.fade-in {
+  z-index: 1000;
+}
+.floating-panel.fade-in:first-of-type {
+  z-index: 2000;
+}
+
+/* Ajout du style pour le bouton retour */
+.back-button {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 22px;
+  font-weight: bold;
+  cursor: pointer;
+  padding: 0 8px 0 0;
+  transition: color 0.2s;
+  outline: none;
+}
+.back-button:hover {
+  color: #ffd700;
+}
+
+.alt-lines {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.3) transparent;
+  align-items: center;
+  min-width: 0;
+  max-width: 70vw;
+}
+.alt-lines::-webkit-scrollbar {
+  height: 6px;
+}
+.alt-lines::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.18);
+  border-radius: 4px;
+}
+.alt-times {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 15px;
+  color: #fff;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.12);
+  margin-left: 18px;
+  min-width: 120px;
+}
+.alt-departure, .alt-arrival, .alt-duration {
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  color: #fff;
+  text-shadow: 0 1.5px 4px rgba(0,0,0,0.10);
+}
+
 </style>
 
 

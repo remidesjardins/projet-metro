@@ -2,8 +2,10 @@
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5050'
 
 export const api = {
-    async getStationsList() {
-        const response = await fetch(`${API_URL}/stations`)
+    async getStationsList(includeRER = true) {
+        const url = new URL(`${API_URL}/stations`)
+        url.searchParams.append('include_rer', includeRER.toString())
+        const response = await fetch(url)
         if (!response.ok) {
             throw new Error('Erreur lors de la récupération des stations')
         }
@@ -61,5 +63,34 @@ export const api = {
             throw error
         }
         return response.json()
+    },
+
+    async getTemporalAlternatives({ start_station, end_station, departure_time, arrival_time, date, max_paths = 3, max_wait_time = 1800, include_rer = true }) {
+        // N'inclure que le champ d'heure fourni
+        const data = {
+            start_station,
+            end_station,
+            date,
+            max_paths,
+            max_wait_time,
+            include_rer
+        };
+        if (departure_time) data.departure_time = departure_time;
+        if (arrival_time) data.arrival_time = arrival_time;
+        const response = await this.post('/temporal/alternatives', data);
+        return response;
+    },
+
+    async getTemporalAlternativesArrival({ start_station, end_station, arrival_time, date, max_paths = 3, max_wait_time = 1800, include_rer = true }) {
+        const response = await this.post('/temporal/alternatives-arrival', {
+            start_station,
+            end_station,
+            arrival_time,
+            date,
+            max_paths,
+            max_wait_time,
+            include_rer
+        });
+        return response;
     }
 }

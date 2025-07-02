@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from datetime import datetime, date, timedelta
 import logging
 import json
+import pandas as pd
+import os
 
 from services.temporal_path import TemporalPathService, TemporalPath, TemporalSegment
 from services.graph_service import GraphService
@@ -31,7 +33,8 @@ def get_services():
             
             # Initialiser les services
             _graph_service = GraphService(graph, stations)
-            _gtfs_service = GTFSemporalService("data/gtfs")
+            gtfs_dir = os.path.join(os.path.dirname(__file__), "../data/gtfs")
+            _gtfs_service = GTFSemporalService(gtfs_dir)
             _temporal_service = TemporalPathService(_graph_service, _gtfs_service)
             
             logger.info("Services temporels initialisés avec succès")
@@ -53,7 +56,8 @@ def get_temporal_path():
         "departure_time": "08:30",
         "date": "2024-01-15",  // optionnel
         "max_paths": 3,        // optionnel
-        "max_wait_time": 1800  // optionnel (30 min en secondes)
+        "max_wait_time": 1800,  // optionnel (30 min en secondes)
+        "include_rer": true  // optionnel (true ou false)
     }
     """
     try:
@@ -80,6 +84,7 @@ def get_temporal_path():
         
         max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
         max_wait_time = data.get('max_wait_time', Config.TEMPORAL_DEFAULT_MAX_WAIT_TIME)
+        include_rer = data.get('include_rer', True)
         
         # Obtenir les services
         temporal_service, graph_service, _ = get_services()
@@ -88,16 +93,25 @@ def get_temporal_path():
         structural_paths = graph_service.find_multiple_paths(
             data['start_station'], data['end_station'], Config.TEMPORAL_MAX_STRUCTURAL_PATHS
         )
+        # Filtrer les chemins structurels si RER désactivé
+        if not include_rer:
+            rer_lines = {'A', 'B', 'C', 'D', 'E'}
+            def path_has_rer(path):
+                for seg in path:
+                    if seg['line'] in rer_lines:
+                        return True
+                return False
+            structural_paths = [p for p in structural_paths if not path_has_rer(p)]
         logger.info(f"[TEMPORAL_PATH] Nombre de chemins structurels trouvés: {len(structural_paths)}")
         if len(structural_paths) == 0:
             logger.warning(f"[TEMPORAL_PATH] Aucun chemin structurel trouvé entre {data['start_station']} et {data['end_station']}")
         
         # Calculer le chemin optimal
-        path = temporal_service.find_optimal_temporal_path(
-            start_station=data['start_station'],
-            end_station=data['end_station'],
+        path = temporal_service.find_optimal_temporal_path_from_structural(
+            structural_paths,
+            data['start_station'],
+            data['end_station'],
             departure_time=departure_time,
-            max_structural_paths=Config.TEMPORAL_MAX_STRUCTURAL_PATHS,
             max_wait_time=max_wait_time
         )
         
@@ -239,48 +253,32 @@ def get_temporal_path_with_arrival():
 def get_alternative_paths():
     """
     Calcule plusieurs chemins alternatifs entre deux stations
-    
-    Body JSON: même format que /path
     """
     try:
         data = request.get_json()
-        
         if not data:
             return jsonify({"error": "Données JSON requises"}), 400
-        
-        # Validation des paramètres requis
         required_fields = ['start_station', 'end_station', 'departure_time']
         for field in required_fields:
             if field not in data:
                 return jsonify({"error": f"Champ requis manquant: {field}"}), 400
-        
-        # Parser les paramètres
         departure_time = parse_time_and_date(
             data['departure_time'], 
             data.get('date')
         )
-        
         max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
-        
-        # Obtenir les services
         temporal_service, _, _ = get_services()
-        
-        # Calculer les chemins alternatifs
         paths = temporal_service.find_alternative_paths(
             start_station=data['start_station'],
             end_station=data['end_station'],
             departure_time=departure_time,
             max_paths=max_paths
         )
-        
         if not paths:
             return jsonify({
                 "error": f"Aucun chemin trouvé entre {data['start_station']} et {data['end_station']} pour l'heure {data['departure_time']}"
             }), 404
-        
-        # Convertir en format de réponse
         path_responses = [convert_temporal_path_to_dict(path) for path in paths]
-        
         response = {
             "paths": path_responses,
             "request_info": {
@@ -291,21 +289,34 @@ def get_alternative_paths():
                 "paths_count": len(path_responses)
             }
         }
-        
         return jsonify(response)
-        
     except ValueError as e:
+        print(f"[ALTERNATIVES][ValueError] {e}")
         return jsonify({"error": str(e)}), 400
     except Exception as e:
-        logger.error(f"Erreur lors du calcul des chemins alternatifs: {e}")
-        return jsonify({"error": "Erreur interne du serveur"}), 500
+        import traceback
+        print(f"[ALTERNATIVES][Exception] {e}")
+        print(traceback.format_exc())
+        return jsonify({"error": "Erreur interne du serveur", "details": str(e)}), 500
 
 @temporal_bp.route('/stations', methods=['GET'])
 def get_stations():
     """Retourne la liste de toutes les stations disponibles"""
     try:
+        include_rer = request.args.get('include_rer', 'true').lower() == 'true'
         _, graph_service, _ = get_services()
         stations = graph_service.get_all_stations()
+        if not include_rer:
+            # Filtrer les stations qui n'ont aucune ligne RER
+            rer_lines = {'A', 'B', 'C', 'D', 'E'}
+            filtered = []
+            for name in stations:
+                lines = graph_service.get_station_info(name).get('line', [])
+                if isinstance(lines, str):
+                    lines = [lines]
+                if not any(l in rer_lines for l in lines):
+                    filtered.append(name)
+            stations = filtered
         return jsonify({"stations": sorted(stations)})
     except Exception as e:
         logger.error(f"Erreur lors de la récupération des stations: {e}")
@@ -368,40 +379,50 @@ def get_next_departure():
         logger.error(f"Erreur lors de la recherche du prochain départ: {e}")
         return jsonify({"error": "Erreur interne du serveur"}), 500
 
+def get_gtfs_valid_period(gtfs_dir="data/gtfs"):
+    calendar_path = os.path.join(gtfs_dir, "calendar.txt")
+    if not os.path.exists(calendar_path):
+        return None, None
+    df = pd.read_csv(calendar_path, dtype=str)
+    min_date = df['start_date'].min()
+    max_date = df['end_date'].max()
+    min_date = pd.to_datetime(min_date, format="%Y%m%d").date()
+    max_date = pd.to_datetime(max_date, format="%Y%m%d").date()
+    return min_date, max_date
+
 def parse_time_and_date(time_str: str, date_str: str = None) -> datetime:
     """Parse une heure et une date optionnelle, gère les heures après minuit (ex: 24:30, 01:15)"""
     try:
-        # Parser l'heure
         hour, minute = map(int, time_str.split(':'))
-        
-        # Validation des minutes
         if not (0 <= minute <= 59):
             raise ValueError("Minutes invalides (0-59)")
-        
-        # Utiliser la date fournie ou aujourd'hui
+        min_gtfs, max_gtfs = get_gtfs_valid_period()
+        if min_gtfs is None or max_gtfs is None:
+            min_gtfs = datetime(2024, 3, 1).date()
+            max_gtfs = datetime(2024, 3, 31).date()
         if date_str:
             target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         else:
             target_date = date.today()
-        
-        # Gérer les heures après minuit (comme dans GTFS)
+        if target_date < min_gtfs:
+            logger.warning(f"[TEMPORAL] Date {target_date} avant la période GTFS ({min_gtfs} - {max_gtfs}), utilisation de {min_gtfs}")
+            target_date = min_gtfs
+        elif target_date > max_gtfs:
+            logger.warning(f"[TEMPORAL] Date {target_date} après la période GTFS ({min_gtfs} - {max_gtfs}), utilisation de {max_gtfs}")
+            target_date = max_gtfs
         if hour >= 24:
-            # Heures après minuit (24:30 = 00:30 du jour suivant)
             hour_adjusted = hour - 24
             target_date += timedelta(days=1)
+            if target_date > max_gtfs:
+                target_date = max_gtfs
             logger.info(f"[TEMPORAL] Heure après minuit détectée: {hour}:{minute:02d} -> {hour_adjusted}:{minute:02d} du {target_date}")
         else:
-            # Heures normales (0h-23h)
             hour_adjusted = hour
-        
-        # Validation des heures ajustées
         if not (0 <= hour_adjusted <= 23):
             raise ValueError(f"Heure invalide après ajustement: {hour_adjusted}")
-        
         result = datetime.combine(target_date, datetime.min.time()) + timedelta(hours=hour_adjusted, minutes=minute)
         logger.info(f"[TEMPORAL] Heure parsée: {time_str} -> {result}")
         return result
-        
     except (ValueError, TypeError) as e:
         raise ValueError(f"Format d'heure invalide: {time_str}. Utilisez le format HH:MM (ex: 08:30, 24:30 pour 00:30 du lendemain)")
 
@@ -545,5 +566,58 @@ def test_transfer():
     except Exception as e:
         logger.error(f"Erreur lors du test de transfert: {e}")
         return jsonify({'error': str(e)}), 500
+
+@temporal_bp.route('/alternatives-arrival', methods=['POST'])
+def get_alternative_paths_arrival():
+    """
+    Calcule plusieurs chemins alternatifs entre deux stations pour une heure d'arrivée souhaitée
+    """
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "Données JSON requises"}), 400
+        required_fields = ['start_station', 'end_station', 'arrival_time']
+        for field in required_fields:
+            if field not in data:
+                return jsonify({"error": f"Champ requis manquant: {field}"}), 400
+        arrival_time = parse_time_and_date(
+            data['arrival_time'],
+            data.get('date')
+        )
+        max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
+        temporal_service, _, _ = get_services()
+        paths = temporal_service.find_optimal_temporal_path_with_arrival_time_all(
+            start_station=data['start_station'],
+            end_station=data['end_station'],
+            arrival_time=arrival_time,
+            max_structural_paths=max_paths * 10,
+            max_wait_time=data.get('max_wait_time', Config.TEMPORAL_DEFAULT_MAX_WAIT_TIME)
+        )
+        if not paths:
+            return jsonify({
+                "error": f"Aucun chemin trouvé entre {data['start_station']} et {data['end_station']} pour arriver à {data['arrival_time']}"
+            }), 404
+        # Limiter au nombre de chemins demandés
+        paths = paths[:max_paths]
+        path_responses = [convert_temporal_path_to_dict(path) for path in paths]
+        response = {
+            "paths": path_responses,
+            "request_info": {
+                "start_station": data['start_station'],
+                "end_station": data['end_station'],
+                "arrival_time": data['arrival_time'],
+                "date": data.get('date'),
+                "paths_count": len(path_responses)
+            }
+        }
+        return jsonify(response)
+    except ValueError as e:
+        print(f"[ALTERNATIVES_ARRIVAL][ValueError] {e}")
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        import traceback
+        print(f"[ALTERNATIVES_ARRIVAL][Exception] {e}")
+        print(traceback.format_exc())
+        return jsonify({"error": "Erreur interne du serveur", "details": str(e)}), 500
 
  
