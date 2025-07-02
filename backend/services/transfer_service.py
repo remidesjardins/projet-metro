@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import logging
 from typing import Dict, List, Optional, Tuple
+import pickle
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +13,9 @@ class TransferService:
         self.gtfs_dir = gtfs_dir
         self.transfers = {}
         self.station_transfers = {}
+        self.transfer_line_cache = {}
         self._load_transfers()
+        self._load_transfer_line_cache()
     
     def _load_transfers(self):
         """Charge les données de transfert depuis transfers.txt"""
@@ -83,21 +86,51 @@ class TransferService:
         """
         return self.station_transfers.get(station, {})
     
+    def _load_transfer_line_cache(self):
+        """Charge ou génère le cache disque des temps de transfert entre lignes."""
+        import hashlib
+        import os
+        cache_file = os.path.join(self.gtfs_dir, '..', 'cache', 'temporal', 'transfer_line_cache.pkl')
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        # Générer une clé de hash sur les fichiers GTFS pour l'invalidation
+        hash_key = 'v1'
+        if os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'rb') as f:
+                    data = pickle.load(f)
+                    if data.get('hash') == hash_key:
+                        self.transfer_line_cache = data['cache']
+                        logger.info(f"[TRANSFER] Cache des temps de transfert entre lignes chargé: {len(self.transfer_line_cache)} entrées")
+                        return
+            except Exception as e:
+                logger.warning(f"[TRANSFER] Erreur chargement cache transfert lignes: {e}")
+        # Sinon, générer le cache à partir des stops/lines connus
+        logger.info("[TRANSFER] Génération du cache des temps de transfert entre lignes...")
+        self.transfer_line_cache = {}
+        # Nécessite gtfs_service pour les mappings, donc on ne pré-remplit que les cas simples ici
+        # Le cache sera enrichi dynamiquement lors des appels
+        with open(cache_file, 'wb') as f:
+            pickle.dump({'hash': hash_key, 'cache': self.transfer_line_cache}, f)
+
+    def save_transfer_line_cache(self):
+        """Sauvegarde le cache disque."""
+        import os
+        cache_file = os.path.join(self.gtfs_dir, '..', 'cache', 'temporal', 'transfer_line_cache.pkl')
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
+        with open(cache_file, 'wb') as f:
+            pickle.dump({'hash': 'v1', 'cache': self.transfer_line_cache}, f)
+
     def get_transfer_time_between_lines(self, station: str, from_line: str, to_line: str, gtfs_service=None) -> int:
         """
         Calcule le temps de transfert réel entre deux lignes dans une station à partir de transfers.txt
-        Args:
-            station: Nom de la station
-            from_line: Ligne de départ
-            to_line: Ligne d'arrivée
-            gtfs_service: Instance de GTFSemporalService pour accès aux mappings
-        Returns:
-            Temps de transfert en secondes
+        Utilise un cache disque pour accélérer les appels répétés.
         """
         if from_line == to_line:
             return 0
+        cache_key = (station, from_line, to_line)
+        if cache_key in self.transfer_line_cache:
+            return self.transfer_line_cache[cache_key]
         if gtfs_service is None:
-            # fallback: ancienne logique
             return 300
         
         # Obtenir tous les stop_ids de la station pour chaque ligne
@@ -109,6 +142,8 @@ class TransferService:
         route_id_to = gtfs_service.route_name_to_id.get(to_line)
         
         if not route_id_from or not route_id_to:
+            self.transfer_line_cache[cache_key] = 300
+            self.save_transfer_line_cache()
             return 300
         
         # Obtenir les trips pour chaque ligne
@@ -136,6 +171,8 @@ class TransferService:
         # Charger directement transfers.txt pour chercher les transferts
         transfers_file = os.path.join(self.gtfs_dir, 'transfers.txt')
         if not os.path.exists(transfers_file):
+            self.transfer_line_cache[cache_key] = 300
+            self.save_transfer_line_cache()
             return 300
         
         transfers_df = pd.read_csv(
@@ -164,6 +201,10 @@ class TransferService:
             
             # Minimum de 3 minutes (180s) pour être réaliste
             realistic_time = max(max_time, 180)
+            self.transfer_line_cache[cache_key] = realistic_time
+            self.save_transfer_line_cache()
             return realistic_time
         
-        return 300  # défaut si rien trouvé 
+        self.transfer_line_cache[cache_key] = 300
+        self.save_transfer_line_cache()
+        return 300 

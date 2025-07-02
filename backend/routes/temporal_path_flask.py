@@ -5,44 +5,15 @@ import json
 import pandas as pd
 import os
 
-from services.temporal_path import TemporalPathService, TemporalPath, TemporalSegment
-from services.graph_service import GraphService
-from services.gtfs_temporal import GTFSemporalService
-from utils.data_manager import DataManager
+from services.service_registry import get_temporal_service, get_graph_service, get_gtfs_service
 from utils.co2 import calculate_emissions_from_segments
 from config import Config
+from services.temporal_path import TemporalPath
+from utils.data_manager import DataManager
 
 logger = logging.getLogger(__name__)
 
 temporal_bp = Blueprint('temporal', __name__, url_prefix='/temporal')
-
-# Initialisation des services (à faire une seule fois)
-_temporal_service = None
-_graph_service = None
-_gtfs_service = None
-
-
-def get_services():
-    """Initialise et retourne les services nécessaires"""
-    global _temporal_service, _graph_service, _gtfs_service
-    
-    if _temporal_service is None:
-        try:
-            # Charger les données
-            graph, positions, stations = DataManager.get_data()
-            
-            # Initialiser les services
-            _graph_service = GraphService(graph, stations)
-            gtfs_dir = os.path.join(os.path.dirname(__file__), "../data/gtfs")
-            _gtfs_service = GTFSemporalService(gtfs_dir)
-            _temporal_service = TemporalPathService(_graph_service, _gtfs_service)
-            
-            logger.info("Services temporels initialisés avec succès")
-        except Exception as e:
-            logger.error(f"Erreur lors de l'initialisation des services temporels: {e}")
-            raise
-    
-    return _temporal_service, _graph_service, _gtfs_service
 
 @temporal_bp.route('/path', methods=['POST'])
 def get_temporal_path():
@@ -619,5 +590,9 @@ def get_alternative_paths_arrival():
         print(f"[ALTERNATIVES_ARRIVAL][Exception] {e}")
         print(traceback.format_exc())
         return jsonify({"error": "Erreur interne du serveur", "details": str(e)}), 500
+
+def get_services():
+    """Retourne les singletons des services nécessaires"""
+    return get_temporal_service(), get_graph_service(), get_gtfs_service()
 
  

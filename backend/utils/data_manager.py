@@ -67,7 +67,7 @@ class DataManager:
         data_dir = Path(__file__).parent.parent / 'data' / 'gtfs'
         
         # Charger le graphe, les positions, les lignes, les terminus et les branches depuis les données GTFS
-        gtfs_graph, gtfs_positions, gtfs_lines, gtfs_terminus, gtfs_branches = parse_gtfs_to_graph(str(data_dir))
+        gtfs_graph, gtfs_positions, gtfs_lines, gtfs_terminus, gtfs_branches = parse_gtfs_to_graph(str(data_dir), parallel=True)
         
         # Convertir le graphe GTFS dans le format attendu
         graph = {}

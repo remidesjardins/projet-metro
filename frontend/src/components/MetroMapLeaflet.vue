@@ -33,9 +33,9 @@
 
       <!-- Les markers et lignes restent affichés -->
       <l-marker
-        v-for="station in stations"
+        v-for="station in allStations"
         :key="station.id"
-        :lat-lng="getLatLng(station)"
+        :lat-lng="convertPosition(station.position)"
         @mouseover="hoveredStation = station.id"
         @mouseout="hoveredStation = null"
         @click="onStationClick(station)"
@@ -195,51 +195,53 @@ const LINE_COLORS = {
 async function fetchStations() {
   try {
     const data = await api.getStationsList()
-    // console.log(data)
+    // Nouveau mapping avec log et filtrage explicite
     stations.value = data.stations.filter(s => s.position && Array.isArray(s.position) && s.position.length === 2)
       .map(station => {
-        const line = Array.isArray(station.lines) && station.lines.length > 0
-          ? station.lines[0]
-          : station.lines
-        return {
-          id: station.ids && station.ids.length > 0 ? station.ids[0] : station.id,
+        let id = undefined;
+        if (station.ids && station.ids.length > 0) id = station.ids[0];
+        else if (station.id) id = station.id;
+        if (!id) {
+          console.warn('Station sans id détectée (ignorée):', station);
+        }
+        return id ? {
+          id,
           name: station.name,
           lines: station.lines,
           position: station.position
-        }
+        } : null;
       })
-    
+      .filter(station => station !== null);
+    // Log des 5 premières stations pour debug
+    console.log('Stations (5 premières):', stations.value.slice(0, 5));
     // Charger aussi allStations pour les trajets temporels
     allStations.value = data.stations.filter(s => s.position && Array.isArray(s.position) && s.position.length === 2)
-      .map(station => ({
-        id: station.ids && station.ids.length > 0 ? station.ids[0] : station.id,
-        name: station.name,
-        lines: station.lines,
-        position: station.position
-      }))
+      .map(station => {
+        let id = undefined;
+        if (station.ids && station.ids.length > 0) id = station.ids[0];
+        else if (station.id) id = station.id;
+        if (!id) {
+          console.warn('Station sans id détectée (ignorée):', station);
+        }
+        return id ? {
+          id,
+          name: station.name,
+          lines: station.lines,
+          position: station.position
+        } : null;
+      })
+      .filter(station => station !== null);
+    console.log('allStations (5 premières):', allStations.value.slice(0, 5));
   } catch (error) {
     console.error('Erreur lors du chargement des stations:', error)
   }
 }
 
 // Charger toutes les stations uniques depuis notre nouvelle API
-function getLatLng(station) {
-  // On attend station.position = [lat, lng] (et non [lng, lat])
-  let x, y;
-
-  if (station.position) {
-    // Format [lat, lng]
-    [x, y] = station.position;
-  } else if (station.x !== undefined && station.y !== undefined) {
-    x = station.x;
-    y = station.y;
-  } else {
-    // Format non reconnu, utiliser des valeurs par défaut
-    console.warn("Format de station non reconnu:", station);
-    return [0, 0];
-  }
-
-  return [x/1000, y/1000]; // [lat, lng] pour Leaflet
+function convertPosition(pos) {
+  // Conversion centièmes/millièmes de degrés -> degrés décimaux
+  if (!Array.isArray(pos) || pos.length !== 2) return [0, 0];
+  return [pos[0] / 1000, pos[1] / 1000];
 }
 
 function getStationType(station) {
@@ -456,7 +458,7 @@ watch(pathDetails, (newPathDetails) => {
       // Convertir toutes les positions des stations de cette ligne
       stations.forEach(station => {
         if (station.Position && station.Position.length === 2) {
-          const latLng = getLatLng({ position: station.Position })
+          const latLng = convertPosition(station.Position)
           pathCoordinates.push(latLng)
         }
       })
@@ -485,7 +487,7 @@ watch(pathDetails, (newPathDetails) => {
       if (segment.originalStations && segment.originalStations.length > 0) {
         segment.originalStations.forEach(station => {
           if (station.Position && station.Position.length === 2) {
-            const latLng = getLatLng({ position: station.Position })
+            const latLng = convertPosition(station.Position)
             pathCoordinates.push(latLng)
           }
         })
@@ -495,7 +497,7 @@ watch(pathDetails, (newPathDetails) => {
           // Chercher la station dans allStations par son nom
           const station = allStations.value.find(s => s.name === stationName)
           if (station && station.position && station.position.length === 2) {
-            const latLng = getLatLng({ position: station.position })
+            const latLng = convertPosition(station.position)
             pathCoordinates.push(latLng)
           } else {
             console.warn(`[MetroMapLeaflet] Station non trouvée: ${stationName}`)
@@ -527,12 +529,31 @@ watch(pathDetails, (newPathDetails) => {
   console.log('[MetroMapLeaflet] shortestPath final:', shortestPath.value.length, 'segments')
 }, { deep: true })
 
+watch(
+  allStations,
+  (newVal) => {
+    if (newVal && newVal.length > 0) {
+      console.log('MetroMapLeaflet: allStations (5 premières après update):', newVal.slice(0, 5));
+      newVal.slice(0, 5).forEach(station => {
+        console.log('Coordonnées converties:', station.name, convertPosition(station.position));
+      });
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(async () => {
   try {
+    // Charger les stations d'abord
     await fetchStations();
-
+    
     // Initialiser la carte après le montage du composant
     initializeMap();
+    if (allStations.value && allStations.value.length > 0) {
+      console.log('MetroMapLeaflet: allStations (5 premières):', allStations.value.slice(0, 5));
+    } else {
+      console.warn('MetroMapLeaflet: allStations vide ou non défini');
+    }
   } catch (error) {
     console.error("Erreur lors de l'initialisation:", error);
   }

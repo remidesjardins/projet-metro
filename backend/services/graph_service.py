@@ -60,40 +60,29 @@ class GraphService:
         
         # Trier par coût total (incluant les pénalités de changement de ligne)
         unique_paths = self._deduplicate_paths(all_paths)
-        unique_paths.sort(key=lambda p: self._calculate_path_cost(p))
+        # Tri déterministe : coût puis tuple des noms de stations
+        unique_paths.sort(key=lambda p: (self._calculate_path_cost(p), tuple(seg['from_station'] for seg in p)))
         
         return unique_paths[:max_paths]
     
     def _calculate_path_cost(self, path: List[Dict]) -> int:
         """
-        Calcule le coût total d'un chemin en incluant les pénalités de changement de ligne
-        
-        Args:
-            path: Liste des segments du chemin
-        
-        Returns:
-            Coût total en secondes
+        Calcule le coût total d'un chemin en incluant une pénalité exponentielle pour les changements de ligne
         """
         if not path:
             return 0
-        
-        # Coût de base : temps de trajet total
         base_cost = sum(seg['time'] for seg in path)
-        
-        # Pénalité pour les changements de ligne
+        # Pénalité exponentielle pour les changements de ligne
         line_changes = 0
         current_line = path[0]['line']
-        
+        penalty = 0
         for segment in path[1:]:
             if segment['line'] != current_line:
                 line_changes += 1
+                # Pénalité exponentielle : 300 * 2**(line_changes-1)
+                penalty += 300 * (2 ** (line_changes - 1))
                 current_line = segment['line']
-        
-        # Pénalité réaliste de 5 minutes par changement de ligne
-        # Cela encourage les trajets directs et décourage les changements excessifs
-        transfer_penalty = line_changes * 300  # 5 minutes = 300 secondes
-        
-        return base_cost + transfer_penalty
+        return base_cost + penalty
     
     def _find_paths_between_ids(
         self, 
@@ -358,19 +347,17 @@ class GraphService:
         return None
     
     def _deduplicate_paths(self, paths: List[List[Dict]]) -> List[List[Dict]]:
-        """Supprime les chemins dupliqués"""
+        """Supprime les chemins dupliqués et les trie de façon déterministe"""
         unique_paths = []
         seen_paths = set()
-        
         for path in paths:
-            # Créer une clé unique pour le chemin
-            path_key = tuple((seg['from_station'], seg['to_station'], seg['line']) 
-                           for seg in path)
-            
+            # Clé unique déterministe : tuple trié des (from_station, to_station, line)
+            path_key = tuple((seg['from_station'], seg['to_station'], seg['line']) for seg in path)
             if path_key not in seen_paths:
                 seen_paths.add(path_key)
                 unique_paths.append(path)
-        
+        # Tri déterministe par coût puis noms de stations
+        unique_paths.sort(key=lambda p: (self._calculate_path_cost(p), tuple(seg['from_station'] for seg in p)))
         return unique_paths
     
     def get_station_info(self, station_name: str) -> Optional[Dict]:

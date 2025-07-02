@@ -269,17 +269,28 @@ async function loadStations() {
   try {
     // console.log('Chargement des stations...')
     const res = await api.getStationsList(includeRER.value)
-    // console.log('Résultat API:', res)
+    // Mapping pour garantir un champ id unique
     allStations.value = res.stations
-    // console.log('Stations chargées:', allStations.value.length)
+      .map(station => {
+        let id = undefined;
+        if (station.ids && station.ids.length > 0) id = station.ids[0];
+        else if (station.id) id = station.id;
+        if (!id) {
+          console.warn('Station sans id détectée (ignorée):', station);
+        }
+        return id ? {
+          ...station,
+          id
+        } : null;
+      })
+      .filter(station => station !== null);
+    // Log debug
+    console.log('allStations (5 premières):', allStations.value.slice(0, 5));
     // Création d'une map nom -> lignes
     stationLinesMap.value = Object.fromEntries(
-      res.stations.map(s => [s.name, s.lines])
+      allStations.value.map(s => [s.name, s.lines])
     )
-    
-    // Afficher une notification de succès
-    notificationService.showLoadSuccess(`${res.stations.length} stations chargées avec succès`)
-    // console.log('Map des lignes créée:', Object.keys(stationLinesMap.value).length)
+    notificationService.showLoadSuccess(`${allStations.value.length} stations chargées avec succès`)
   } catch (e) {
     console.error('Erreur lors du chargement des stations:', e)
     notificationService.handleApiError(e, 'loadStations')

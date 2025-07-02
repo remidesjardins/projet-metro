@@ -6,6 +6,9 @@ import pickle
 from typing import Dict, List, Tuple, Set, Any
 from pathlib import Path
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import defaultdict
+import hashlib
 
 # Configuration du logging
 logging.basicConfig(
@@ -131,25 +134,54 @@ class GTFSMetroParser:
         
         # Charger les transfers pour identifier les stations physiquement identiques
         logger.info("Chargement des transfers...")
-        self.transfers_df = pd.read_csv(
-            os.path.join(self.gtfs_dir, 'transfers.txt'),
-            usecols=['from_stop_id', 'to_stop_id', 'transfer_type'],
-            dtype={
-                'from_stop_id': 'string',
-                'to_stop_id': 'string',
-                'transfer_type': 'int8'
-            },
-            low_memory=False
-        )
-        
-        # Filtrer seulement les transfers entre stops utilisés
-        used_stop_ids = set(self.stops_df['stop_id'].unique())
-        self.transfers_df = self.transfers_df[
-            (self.transfers_df['from_stop_id'].isin(used_stop_ids)) &
-            (self.transfers_df['to_stop_id'].isin(used_stop_ids))
-        ]
-        
-        logger.info(f"Transfers filtrés: {len(self.transfers_df)} transfers entre stations utilisées")
+        transfers_file = os.path.join(self.gtfs_dir, 'transfers.txt')
+        cache_dir = Path(self.gtfs_dir).parent / 'cache'
+        cache_dir.mkdir(exist_ok=True)
+        transfers_cache = cache_dir / 'transfers_filtered.pkl'
+        # Calculer un hash du fichier source pour l'invalider si modifié
+        def file_hash(path):
+            h = hashlib.sha256()
+            with open(path, 'rb') as f:
+                while True:
+                    chunk = f.read(8192)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+            return h.hexdigest()
+        hash_file = cache_dir / 'transfers_hash.txt'
+        current_hash = file_hash(transfers_file) if os.path.exists(transfers_file) else None
+        cache_valid = False
+        if transfers_cache.exists() and hash_file.exists():
+            with open(hash_file, 'r') as f:
+                cached_hash = f.read().strip()
+            if cached_hash == current_hash:
+                cache_valid = True
+        if cache_valid:
+            with open(transfers_cache, 'rb') as f:
+                self.transfers_df = pickle.load(f)
+            logger.info(f"Transfers filtrés chargés depuis le cache ({len(self.transfers_df)} transferts)")
+        else:
+            self.transfers_df = pd.read_csv(
+                transfers_file,
+                usecols=['from_stop_id', 'to_stop_id', 'transfer_type'],
+                dtype={
+                    'from_stop_id': 'string',
+                    'to_stop_id': 'string',
+                    'transfer_type': 'int8'
+                },
+                low_memory=False
+            )
+            # Filtrer seulement les transfers entre stops utilisés
+            used_stop_ids = set(self.stops_df['stop_id'].unique())
+            self.transfers_df = self.transfers_df[
+                (self.transfers_df['from_stop_id'].isin(used_stop_ids)) &
+                (self.transfers_df['to_stop_id'].isin(used_stop_ids))
+            ]
+            with open(transfers_cache, 'wb') as f:
+                pickle.dump(self.transfers_df, f)
+            with open(hash_file, 'w') as f:
+                f.write(current_hash or '')
+            logger.info(f"Transfers filtrés sauvegardés dans le cache ({len(self.transfers_df)} transferts)")
         
         # Créer un mapping des stations physiquement identiques
         self._create_station_groups()
@@ -310,8 +342,9 @@ class GTFSMetroParser:
         hours, minutes, seconds = map(int, time_str.split(':'))
         return hours * 3600 + minutes * 60 + seconds
 
-    def build_metro_graph(self) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, Tuple[float, float]], Dict[str, List[str]], Set[str], Dict[str, int]]:
-        """Construit le graphe du métro à partir des données GTFS avec optimisations."""
+    def build_metro_graph(self, parallel=True) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, Tuple[float, float]], Dict[str, List[str]], Set[str], Dict[str, int]]:
+        import copy
+        import math
         start_time = time.time()
         
         # Essayer de charger depuis le cache
@@ -328,27 +361,25 @@ class GTFSMetroParser:
         lines = {name: set() for name in self.stop_name_to_ids}
         terminus = set()
         
-        # Optimisation 7: Traiter les trips par route pour réduire les calculs
-        logger.info("Traitement des connexions par route...")
+        # Préparer toutes les données nécessaires pour les workers
+        route_ids = list(self.routes_df['route_id'])
+        route_names = self.route_names.copy()
+        trip_routes = self.trip_routes.copy()
+        trips_df = self.trips_df.copy()
+        stop_times_df = self.stop_times_df.copy()
+        stop_id_to_main_station = self.stop_id_to_main_station.copy()
+        stop_id_to_name = self.stop_id_to_name.copy()
         
-        total_routes = len(self.routes_df['route_id'])
-        total_trips = len(self.trips_df)
-        route_idx = 0
-        trips_done = 0
-        connexions_done = 0
-        for route_id in self.routes_df['route_id']:
-            route_idx += 1
-            if route_idx % 2 == 0 or route_idx == total_routes:
-                logger.info(f"Route {route_idx}/{total_routes} traitée...")
-            route_name = self.route_names[route_id]
-            route_trips = self.trips_df[self.trips_df['route_id'] == route_id]['trip_id']
+        def process_route_worker(args):
+            route_id, route_names, trips_df, stop_times_df, stop_id_to_main_station, stop_id_to_name = args
+            local_graph = defaultdict(set)
+            local_lines = defaultdict(set)
+            local_terminus = set()
+            route_name = route_names[route_id]
+            route_trips = trips_df[trips_df['route_id'] == route_id]['trip_id']
             for trip_id in route_trips:
-                trips_done += 1
-                if trips_done % 500 == 0 or trips_done == total_trips:
-                    logger.info(f"{trips_done}/{total_trips} trips traités...")
-                # Récupérer les arrêts de ce trip
-                if trip_id in self.stop_times_df.index:
-                    trip_stops = self.stop_times_df.loc[trip_id].sort_values('stop_sequence')
+                if trip_id in stop_times_df.index:
+                    trip_stops = stop_times_df.loc[trip_id].sort_values('stop_sequence')
                     if isinstance(trip_stops, pd.Series):
                         trip_stops = pd.DataFrame([trip_stops])
                     if len(trip_stops) < 2:
@@ -356,50 +387,64 @@ class GTFSMetroParser:
                     for i in range(len(trip_stops) - 1):
                         current_stop = trip_stops.iloc[i]
                         next_stop = trip_stops.iloc[i+1]
-                        
-                        # Utiliser le nom principal de station si disponible
-                        a = self.stop_id_to_main_station.get(current_stop['stop_id'], self.stop_id_to_name[current_stop['stop_id']])
-                        b = self.stop_id_to_main_station.get(next_stop['stop_id'], self.stop_id_to_name[next_stop['stop_id']])
-                        
+                        a = stop_id_to_main_station.get(current_stop['stop_id'], stop_id_to_name[current_stop['stop_id']])
+                        b = stop_id_to_main_station.get(next_stop['stop_id'], stop_id_to_name[next_stop['stop_id']])
                         if a != b:
-                            current_time = self._time_to_seconds(current_stop['departure_time'])
-                            next_time = self._time_to_seconds(next_stop['arrival_time'])
+                            current_time = int(current_stop['departure_time'][:2]) * 3600 + int(current_stop['departure_time'][3:5]) * 60 + int(current_stop['departure_time'][6:])
+                            next_time = int(next_stop['arrival_time'][:2]) * 3600 + int(next_stop['arrival_time'][3:5]) * 60 + int(next_stop['arrival_time'][6:])
                             duration = next_time - current_time
                             if duration < 0:
                                 duration += 24 * 3600
-                            graph[a].add((b, duration))
-                            graph[b].add((a, duration))
-                            lines[a].add(route_name)
-                            lines[b].add(route_name)
-                            connexions_done += 1
-                            if connexions_done % 10000 == 0:
-                                logger.info(f"{connexions_done} connexions ajoutées...")
-            if len(trip_stops) > 0:
-                first_stop = self.stop_id_to_main_station.get(trip_stops.iloc[0]['stop_id'], self.stop_id_to_name[trip_stops.iloc[0]['stop_id']])
-                last_stop = self.stop_id_to_main_station.get(trip_stops.iloc[-1]['stop_id'], self.stop_id_to_name[trip_stops.iloc[-1]['stop_id']])
-                terminus.add(first_stop)
-                terminus.add(last_stop)
+                            local_graph[a].add((b, duration))
+                            local_graph[b].add((a, duration))
+                            local_lines[a].add(route_name)
+                            local_lines[b].add(route_name)
+                    if len(trip_stops) > 0:
+                        first_stop = stop_id_to_main_station.get(trip_stops.iloc[0]['stop_id'], stop_id_to_name[trip_stops.iloc[0]['stop_id']])
+                        last_stop = stop_id_to_main_station.get(trip_stops.iloc[-1]['stop_id'], stop_id_to_name[trip_stops.iloc[-1]['stop_id']])
+                        local_terminus.add(first_stop)
+                        local_terminus.add(last_stop)
+            return local_graph, local_lines, local_terminus
         
+        logger.info(f"Traitement des connexions par route... (parallèle={parallel})")
+        if parallel:
+            args_list = [
+                (route_id, route_names, trips_df, stop_times_df, stop_id_to_main_station, stop_id_to_name)
+                for route_id in route_ids
+            ]
+            with ProcessPoolExecutor() as executor:
+                for idx, result in enumerate(executor.map(process_route_worker, args_list)):
+                    local_graph, local_lines, local_terminus = result
+                    for k, v in local_graph.items():
+                        graph[k].update(v)
+                    for k, v in local_lines.items():
+                        lines[k].update(v)
+                    terminus.update(local_terminus)
+                    if (idx+1) % 2 == 0 or (idx+1) == len(route_ids):
+                        logger.info(f"Route {idx+1}/{len(route_ids)} traitée...")
+        else:
+            for idx, route_id in enumerate(route_ids):
+                local_graph, local_lines, local_terminus = process_route_worker((route_id, route_names, trips_df, stop_times_df, stop_id_to_main_station, stop_id_to_name))
+                for k, v in local_graph.items():
+                    graph[k].update(v)
+                for k, v in local_lines.items():
+                    lines[k].update(v)
+                terminus.update(local_terminus)
+                if (idx+1) % 2 == 0 or (idx+1) == len(route_ids):
+                    logger.info(f"Route {idx+1}/{len(route_ids)} traitée...")
         # Convertir les sets en listes et lignes en listes triées
         logger.info("Finalisation du graphe...")
         graph = {k: sorted(list(v)) for k, v in graph.items()}
         lines = {k: sorted(list(v)) for k, v in lines.items()}
-        
-        # Branches : à recalculer si besoin, sinon 0 partout
         branches = {k: 0 for k in graph}
-        
-        # Sauvegarder le graphe
         result = (graph, positions, lines, terminus, branches)
         self._save_graph(result)
-        
         build_time = time.time() - start_time
         logger.info(f"Graphe construit en {build_time:.2f}s")
-        
         logger.info(f"Nombre de sommets (stations) dans le graphe : {len(graph)}")
-        
         return result
 
-def parse_gtfs_to_graph(gtfs_dir: str) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, Tuple[float, float]], Dict[str, List[str]], Set[str], Dict[str, int]]:
+def parse_gtfs_to_graph(gtfs_dir: str, parallel=True) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, Tuple[float, float]], Dict[str, List[str]], Set[str], Dict[str, int]]:
     """Parse les données GTFS et retourne le graphe du métro."""
     parser = GTFSMetroParser(gtfs_dir)
-    return parser.build_metro_graph() 
+    return parser.build_metro_graph(parallel=parallel) 
