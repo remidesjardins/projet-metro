@@ -183,7 +183,12 @@ const LINE_COLORS = {
   '11': '#8D5E2A',  // Marron clair - ligne 11
   '12': '#007E52',  // Vert foncé - ligne 12
   '13': '#73C0E9',  // Bleu clair - ligne 13
-  '14': '#662483'   // Violet - ligne 14
+  '14': '#662483',  // Violet - ligne 14
+  'A': '#EB2132',  // Rouge - RER A
+  'B': '#5091CB',  // Bleu - RER B
+  'C': '#FFCC30',  // Jaune - RER C
+  'D': '#008B5B',  // Vert - RER D
+  'E': '#B94E9A'   // Violet - RER E
 }
 
 // Charger les stations depuis l'API

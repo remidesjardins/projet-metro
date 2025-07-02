@@ -17,6 +17,9 @@ def get_stations():
         if request.method == 'HEAD':
             return '', 200
         
+        # Récupérer le paramètre include_rer
+        include_rer = request.args.get('include_rer', 'true').lower() == 'true'
+        
         graph, positions, stations = load_data()
         
         station_groups = {}
@@ -47,6 +50,14 @@ def get_stations():
         # Formater la liste finale
         stations_list = []
         for group in station_groups.values():
+            # Si include_rer est False, filtrer les stations qui ont des lignes RER
+            if not include_rer:
+                rer_lines = {'A', 'B', 'C', 'D', 'E'}
+                station_lines = set(group['lines'])
+                # Si la station a des lignes RER, l'exclure
+                if station_lines & rer_lines:
+                    continue
+            
             stations_list.append({
                 'name': group['name'],
                 'lines': list(group['lines']),

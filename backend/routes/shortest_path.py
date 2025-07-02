@@ -21,14 +21,41 @@ def get_shortest_path():
         start_id = data['start']
         end_id = data['end']
         
+        # Récupérer le paramètre include_rer (par défaut True)
+        include_rer = data.get('include_rer', True)
+        
         graph, positions, stations = load_data()
         
         # Vérifier que les stations existent
         validate_station_exists(start_id, stations)
         validate_station_exists(end_id, stations)
         
-        # Calculer le plus court chemin
-        dist, path = dijkstra(graph, start_id, end_id)
+        # Si include_rer est False, créer un graphe filtré sans les connexions RER
+        if not include_rer:
+            filtered_graph = {}
+            rer_lines = {'A', 'B', 'C', 'D', 'E'}
+            
+            for station_id, neighbors in graph.items():
+                filtered_neighbors = set()
+                station_lines = set(stations[station_id]['line'].split(',') if isinstance(stations[station_id]['line'], str) else stations[station_id]['line'])
+                
+                for neighbor_id in neighbors:
+                    neighbor_lines = set(stations[neighbor_id]['line'].split(',') if isinstance(stations[neighbor_id]['line'], str) else stations[neighbor_id]['line'])
+                    
+                    # Vérifier si la connexion passe par une ligne RER
+                    connection_lines = station_lines & neighbor_lines
+                    if not (connection_lines & rer_lines):
+                        # Pas de ligne RER dans la connexion, on peut l'inclure
+                        filtered_neighbors.add(neighbor_id)
+                
+                if filtered_neighbors:
+                    filtered_graph[station_id] = filtered_neighbors
+            
+            # Utiliser le graphe filtré pour le calcul
+            dist, path = dijkstra(filtered_graph, start_id, end_id)
+        else:
+            # Utiliser le graphe complet
+            dist, path = dijkstra(graph, start_id, end_id)
         
         if not path:
             raise NotFoundError('Aucun chemin trouvé entre les stations spécifiées')

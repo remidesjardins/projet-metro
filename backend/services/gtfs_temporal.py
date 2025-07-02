@@ -49,10 +49,10 @@ class GTFSemporalService:
             dtype={'route_id': 'string', 'route_short_name': 'string', 'route_type': 'int8'}
         )
         
-        # Filtrer pour le métro parisien
+        # Filtrer pour le métro parisien ET les RER
         metro_routes = routes_df[
-            (routes_df['route_type'] == 1) & 
-            (routes_df['route_short_name'].isin([str(i) for i in range(1, 15)] + ['3B', '7B']))
+            ((routes_df['route_type'] == 1) | (routes_df['route_type'] == 2)) &
+            (routes_df['route_short_name'].isin([str(i) for i in range(1, 15)] + ['3B', '7B', 'A', 'B', 'C', 'D', 'E']))
         ]
         
         self.route_id_to_name = metro_routes.set_index('route_id')['route_short_name'].to_dict()

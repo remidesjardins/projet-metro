@@ -446,28 +446,18 @@ class TemporalPathService:
     ) -> List[TemporalPath]:
         """
         Trouve plusieurs itinéraires alternatifs
-        
-        Args:
-            start_station: Station de départ
-            end_station: Station d'arrivée
-            departure_time: Heure de départ
-            max_paths: Nombre maximum d'itinéraires à retourner
-            max_wait_time: Temps d'attente maximum autorisé (secondes)
-        
-        Returns:
-            Liste des itinéraires alternatifs triés par durée
         """
         # Augmenter le nombre de chemins structurels pour avoir plus d'alternatives
         structural_paths = self.graph_service.find_multiple_paths(
-            start_station, end_station, max_paths * 3
+            start_station, end_station, max_paths * 10
         )
-        
+        logger.info(f"[ALTERNATIVES] {len(structural_paths)} chemins structurels générés pour {start_station} -> {end_station}")
         temporal_paths = []
         for path in structural_paths:
             temporal_path = self._evaluate_temporal_path(path, departure_time, max_wait_time)
             if temporal_path:
                 temporal_paths.append(temporal_path)
-        
+        logger.info(f"[ALTERNATIVES] {len(temporal_paths)} chemins temporels valides générés pour {start_station} -> {end_station}")
         # Trier par durée et retourner les meilleurs
         temporal_paths.sort(key=lambda p: p.total_duration)
         return temporal_paths[:max_paths]
@@ -834,3 +824,27 @@ class TemporalPathService:
                             return True
         
         return False 
+
+    def find_optimal_temporal_path_from_structural(
+        self,
+        structural_paths,
+        start_station,
+        end_station,
+        departure_time,
+        max_wait_time=1800
+    ):
+        """
+        Évalue une liste de chemins structurels déjà filtrés (ex: sans RER) et retourne le meilleur chemin temporel.
+        """
+        if not structural_paths:
+            return None
+        temporal_paths = []
+        for path in structural_paths:
+            temporal_path = self._evaluate_temporal_path(path, departure_time, max_wait_time)
+            if temporal_path:
+                temporal_paths.append(temporal_path)
+        if not temporal_paths:
+            return None
+        # Trier par durée totale (ou score pondéré si besoin)
+        temporal_paths.sort(key=lambda p: p.total_duration)
+        return temporal_paths[0] 
