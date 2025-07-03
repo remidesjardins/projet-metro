@@ -370,42 +370,6 @@ class GTFSMetroParser:
         stop_id_to_main_station = self.stop_id_to_main_station.copy()
         stop_id_to_name = self.stop_id_to_name.copy()
         
-        def process_route_worker(args):
-            route_id, route_names, trips_df, stop_times_df, stop_id_to_main_station, stop_id_to_name = args
-            local_graph = defaultdict(set)
-            local_lines = defaultdict(set)
-            local_terminus = set()
-            route_name = route_names[route_id]
-            route_trips = trips_df[trips_df['route_id'] == route_id]['trip_id']
-            for trip_id in route_trips:
-                if trip_id in stop_times_df.index:
-                    trip_stops = stop_times_df.loc[trip_id].sort_values('stop_sequence')
-                    if isinstance(trip_stops, pd.Series):
-                        trip_stops = pd.DataFrame([trip_stops])
-                    if len(trip_stops) < 2:
-                        continue
-                    for i in range(len(trip_stops) - 1):
-                        current_stop = trip_stops.iloc[i]
-                        next_stop = trip_stops.iloc[i+1]
-                        a = stop_id_to_main_station.get(current_stop['stop_id'], stop_id_to_name[current_stop['stop_id']])
-                        b = stop_id_to_main_station.get(next_stop['stop_id'], stop_id_to_name[next_stop['stop_id']])
-                        if a != b:
-                            current_time = int(current_stop['departure_time'][:2]) * 3600 + int(current_stop['departure_time'][3:5]) * 60 + int(current_stop['departure_time'][6:])
-                            next_time = int(next_stop['arrival_time'][:2]) * 3600 + int(next_stop['arrival_time'][3:5]) * 60 + int(next_stop['arrival_time'][6:])
-                            duration = next_time - current_time
-                            if duration < 0:
-                                duration += 24 * 3600
-                            local_graph[a].add((b, duration))
-                            local_graph[b].add((a, duration))
-                            local_lines[a].add(route_name)
-                            local_lines[b].add(route_name)
-                    if len(trip_stops) > 0:
-                        first_stop = stop_id_to_main_station.get(trip_stops.iloc[0]['stop_id'], stop_id_to_name[trip_stops.iloc[0]['stop_id']])
-                        last_stop = stop_id_to_main_station.get(trip_stops.iloc[-1]['stop_id'], stop_id_to_name[trip_stops.iloc[-1]['stop_id']])
-                        local_terminus.add(first_stop)
-                        local_terminus.add(last_stop)
-            return local_graph, local_lines, local_terminus
-        
         logger.info(f"Traitement des connexions par route... (parallèle={parallel})")
         if parallel:
             args_list = [
@@ -447,4 +411,44 @@ class GTFSMetroParser:
 def parse_gtfs_to_graph(gtfs_dir: str, parallel=True) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, Tuple[float, float]], Dict[str, List[str]], Set[str], Dict[str, int]]:
     """Parse les données GTFS et retourne le graphe du métro."""
     parser = GTFSMetroParser(gtfs_dir)
-    return parser.build_metro_graph(parallel=parallel) 
+    return parser.build_metro_graph(parallel=parallel)
+
+# === DÉBUT : Ajout de la fonction worker au niveau module ===
+def process_route_worker(args):
+    import pandas as pd
+    from collections import defaultdict
+    route_id, route_names, trips_df, stop_times_df, stop_id_to_main_station, stop_id_to_name = args
+    local_graph = defaultdict(set)
+    local_lines = defaultdict(set)
+    local_terminus = set()
+    route_name = route_names[route_id]
+    route_trips = trips_df[trips_df['route_id'] == route_id]['trip_id']
+    for trip_id in route_trips:
+        if trip_id in stop_times_df.index:
+            trip_stops = stop_times_df.loc[trip_id].sort_values('stop_sequence')
+            if isinstance(trip_stops, pd.Series):
+                trip_stops = pd.DataFrame([trip_stops])
+            if len(trip_stops) < 2:
+                continue
+            for i in range(len(trip_stops) - 1):
+                current_stop = trip_stops.iloc[i]
+                next_stop = trip_stops.iloc[i+1]
+                a = stop_id_to_main_station.get(current_stop['stop_id'], stop_id_to_name[current_stop['stop_id']])
+                b = stop_id_to_main_station.get(next_stop['stop_id'], stop_id_to_name[next_stop['stop_id']])
+                if a != b:
+                    current_time = int(current_stop['departure_time'][:2]) * 3600 + int(current_stop['departure_time'][3:5]) * 60 + int(current_stop['departure_time'][6:])
+                    next_time = int(next_stop['arrival_time'][:2]) * 3600 + int(next_stop['arrival_time'][3:5]) * 60 + int(next_stop['arrival_time'][6:])
+                    duration = next_time - current_time
+                    if duration < 0:
+                        duration += 24 * 3600
+                    local_graph[a].add((b, duration))
+                    local_graph[b].add((a, duration))
+                    local_lines[a].add(route_name)
+                    local_lines[b].add(route_name)
+            if len(trip_stops) > 0:
+                first_stop = stop_id_to_main_station.get(trip_stops.iloc[0]['stop_id'], stop_id_to_name[trip_stops.iloc[0]['stop_id']])
+                last_stop = stop_id_to_main_station.get(trip_stops.iloc[-1]['stop_id'], stop_id_to_name[trip_stops.iloc[-1]['stop_id']])
+                local_terminus.add(first_stop)
+                local_terminus.add(last_stop)
+    return local_graph, local_lines, local_terminus
+# === FIN : Ajout de la fonction worker au niveau module === 
