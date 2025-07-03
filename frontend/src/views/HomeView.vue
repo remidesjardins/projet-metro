@@ -613,7 +613,7 @@ async function findPath() {
   const t0 = performance.now();
   try {
     if (searchMode.value === 'temporal') {
-      // Recherche des 3 meilleurs chemins
+      // Recherche des 4 meilleurs chemins
       let response;
       if (timeType.value === 'arrival') {
         response = await api.getTemporalAlternativesArrival({
@@ -621,7 +621,7 @@ async function findPath() {
           end_station: endStation.value,
           arrival_time: departureTime.value,
           date: departureDate.value,
-          max_paths: 3,
+          max_paths: 4,
           max_wait_time: 1800,
           include_rer: includeRER.value
         });
@@ -631,7 +631,7 @@ async function findPath() {
           end_station: endStation.value,
           departure_time: departureTime.value,
           date: departureDate.value,
-          max_paths: 3,
+          max_paths: 4,
           max_wait_time: 1800,
           include_rer: includeRER.value
         });
@@ -1020,6 +1020,21 @@ function getUniqueLines(segments) {
   }
   return result;
 }
+
+function swapStations() {
+  // Inverser les valeurs
+  const tmp = startStation.value;
+  startStation.value = endStation.value;
+  endStation.value = tmp;
+  // Inverser les IDs
+  const tmpId = startStationId.value;
+  startStationId.value = endStationId.value;
+  endStationId.value = tmpId;
+  // Inverser les suggestions
+  const tmpSug = startStationSuggestions.value;
+  startStationSuggestions.value = endStationSuggestions.value;
+  endStationSuggestions.value = tmpSug;
+}
 </script>
 
 <template>
@@ -1088,7 +1103,12 @@ function getUniqueLines(segments) {
             </div>
           </div>
         </div>
-              
+        <!-- BOUTON D'INVERSION -->
+        <div class="swap-button-glass">
+          <button @click="swapStations" title="Inverser départ et arrivée">
+            <span class="swap-icon">⇄</span>
+          </button>
+        </div>
         <div class="input-group">
               <label for="endStation">
                   <span class="station-indicator arrival"></span>
@@ -4570,6 +4590,47 @@ div[style*="top: var(--spacing-xl)"] {
   letter-spacing: 0.01em;
   color: #fff;
   text-shadow: 0 1.5px 4px rgba(0,0,0,0.10);
+}
+
+.swap-button-glass {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 12px;
+}
+.swap-button-glass button {
+  background: linear-gradient(135deg, rgba(255,255,255,0.35), rgba(81,162,171,0.25));
+  border-radius: 50%;
+  border: 2.5px solid #1976d2;
+  box-shadow: 0 6px 24px rgba(25, 118, 210, 0.18), 0 1.5px 8px rgba(0,0,0,0.10);
+  backdrop-filter: blur(22px) saturate(160%);
+  -webkit-backdrop-filter: blur(22px) saturate(160%);
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border 0.2s, background 0.2s, box-shadow 0.2s, transform 0.18s cubic-bezier(0.4,0,0.2,1);
+  font-size: 26px;
+  color: #1976d2;
+  outline: none;
+}
+.swap-button-glass button:hover {
+  border: 2.5px solid #fff;
+  background: linear-gradient(135deg, rgba(25,118,210,0.22), rgba(255,255,255,0.32));
+  box-shadow: 0 12px 32px rgba(25, 118, 210, 0.22), 0 4px 16px rgba(81, 162, 171, 0.18);
+  transform: scale(1.08) rotate(-8deg);
+}
+.swap-icon {
+  font-size: 28px;
+  font-weight: bold;
+  color: #1976d2;
+  text-shadow: 0 2px 12px rgba(25, 118, 210, 0.18), 0 1.5px 4px rgba(0,0,0,0.10);
+  transition: color 0.2s;
+}
+.swap-button-glass button:hover .swap-icon {
+  color: #fff;
 }
 
 </style>

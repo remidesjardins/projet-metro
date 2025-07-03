@@ -25,20 +25,11 @@ class GraphService:
         self, 
         start_station: str, 
         end_station: str, 
-        max_paths: int = 10,
+        max_paths: int = None,
         max_path_length: int = 50  # Nombre max de stations par chemin
     ) -> List[List[Dict]]:
         """
-        Trouve plusieurs chemins entre deux stations
-        
-        Args:
-            start_station: Nom de la station de départ
-            end_station: Nom de la station d'arrivée
-            max_paths: Nombre maximum de chemins à retourner
-            max_path_length: Longueur maximum d'un chemin (stations)
-        
-        Returns:
-            Liste de chemins, chaque chemin est une liste de segments
+        Trouve tous les chemins structurels entre deux stations si max_paths=None, sinon limite à max_paths
         """
         # Obtenir les IDs des stations
         start_ids = self.name_to_ids.get(start_station, [])
@@ -54,7 +45,7 @@ class GraphService:
         for start_id in start_ids:
             for end_id in end_ids:
                 paths = self._find_paths_between_ids(
-                    start_id, end_id, max_paths, max_path_length
+                    start_id, end_id, max_paths if max_paths is not None else 999999, max_path_length
                 )
                 all_paths.extend(paths)
         
@@ -63,24 +54,26 @@ class GraphService:
         # Tri déterministe : coût puis tuple des noms de stations
         unique_paths.sort(key=lambda p: (self._calculate_path_cost(p), tuple(seg['from_station'] for seg in p)))
         
-        return unique_paths[:max_paths]
+        if max_paths is not None:
+            return unique_paths[:max_paths]
+        return unique_paths
     
     def _calculate_path_cost(self, path: List[Dict]) -> int:
         """
-        Calcule le coût total d'un chemin en incluant une pénalité exponentielle pour les changements de ligne
+        Calcule le coût total d'un chemin en incluant une pénalité linéaire forte pour les changements de ligne
         """
         if not path:
             return 0
         base_cost = sum(seg['time'] for seg in path)
-        # Pénalité exponentielle pour les changements de ligne
+        # Pénalité linéaire forte pour les changements de ligne
         line_changes = 0
         current_line = path[0]['line']
         penalty = 0
         for segment in path[1:]:
             if segment['line'] != current_line:
                 line_changes += 1
-                # Pénalité exponentielle : 300 * 2**(line_changes-1)
-                penalty += 300 * (2 ** (line_changes - 1))
+                # Pénalité linéaire forte : 600s par changement
+                penalty += 600
                 current_line = segment['line']
         return base_cost + penalty
     

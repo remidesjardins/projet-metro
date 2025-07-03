@@ -218,18 +218,15 @@ class TemporalPathService:
         def calculate_weighted_score(path: TemporalPath) -> int:
             # Durée de base
             base_duration = path.total_duration
-            
             # Calculer la pénalité basée sur les temps de correspondance réels
             total_transfer_penalty = 0
             for segment in path.segments:
                 if segment.transfer_time > 0:  # Si c'est un changement de ligne
-                    # Pénalité = temps de marche + temps d'attente (ce qui est affiché à l'utilisateur)
-                    transfer_penalty = segment.transfer_time + segment.wait_time
+                    # Pénalité = 2x (temps de marche + temps d'attente)
+                    transfer_penalty = 2 * (segment.transfer_time + segment.wait_time)
                     total_transfer_penalty += transfer_penalty
-            
-            # Pénalité pour le temps d'attente total (encourage les départs directs)
-            wait_penalty = path.total_wait_time * 0.5  # Pénalité de 50% du temps d'attente
-            
+            # Pénalité pour le temps d'attente total (100% du temps d'attente)
+            wait_penalty = path.total_wait_time  # Pénalité de 100% du temps d'attente
             return base_duration + total_transfer_penalty + int(wait_penalty)
         
         # Trier par score pondéré
