@@ -25,12 +25,18 @@ class UnionFind:
         return True
 
 def kruskal_mst(edges, n):
-    uf = UnionFind(range(n))
+    # Extraire tous les nœuds uniques des arêtes
+    nodes = set()
+    for weight, s1, s2 in edges:
+        nodes.add(s1)
+        nodes.add(s2)
+    
+    uf = UnionFind(nodes)
     mst = []
     total_weight = 0
     for weight, s1, s2 in edges:
         if uf.union(s1, s2):
-            mst.append((s1, s2, weight))
+            mst.append((s1, s2))
             total_weight += weight
             if len(mst) == n - 1:
                 break

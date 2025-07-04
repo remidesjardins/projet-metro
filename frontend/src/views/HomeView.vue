@@ -36,9 +36,6 @@ const departureDate = ref('2024-03-15')
 // Ajout : type d'heure (départ/arrivée)
 const timeType = ref('departure') // 'departure' ou 'arrival'
 
-// Toggle pour inclure/exclure les RER
-const includeRER = ref(true)
-
 // Notifications
 const errorState = notificationService.getErrorState()
 const successState = notificationService.getSuccessState()
@@ -268,7 +265,7 @@ onMounted(async () => {
 async function loadStations() {
   try {
     // console.log('Chargement des stations...')
-    const res = await api.getStationsList(includeRER.value)
+    const res = await api.getStationsList()
     // Mapping pour garantir un champ id unique
     allStations.value = res.stations
       .map(station => {
@@ -457,8 +454,8 @@ async function fetchACPM() {
       if (fromStation && toStation && fromStation.position && toStation.position) {
         return {
           path: [
-            [fromStation.position[0] / 1000, fromStation.position[1] / 1000],
-            [toStation.position[0] / 1000, toStation.position[1] / 1000]
+            [fromStation.position[1], fromStation.position[0]], // Inverser l'ordre comme convertPosition
+            [toStation.position[1], toStation.position[0]]     // Inverser l'ordre comme convertPosition
           ],
           color: '#000000', // Noir pour ACPM
           weight: 4,
@@ -510,7 +507,7 @@ async function fetchLines() {
         
         const path = branch.map(station => {
           if (station.position && Array.isArray(station.position) && station.position.length === 2) {
-            return [station.position[0] / 1000, station.position[1] / 1000]
+            return [station.position[1], station.position[0]] // Inverser l'ordre comme convertPosition
           }
           console.log(`Station sans position valide:`, station)
           return null
@@ -546,22 +543,6 @@ function clearPath() {
   pathLength.value = { duration: null, emissions: null, stationsCount: null }
   temporalData.value = null
   // console.log('Chemin effacé')
-}
-
-// Fonction pour gérer le changement du toggle RER
-async function toggleRER() {
-  includeRER.value = !includeRER.value
-  // Recharger les stations avec le nouveau paramètre
-  await loadStations()
-  // Effacer les résultats actuels car ils peuvent ne plus être valides
-  clearPath()
-  // Effacer les sélections de stations
-  startStation.value = ''
-  endStation.value = ''
-  startStationId.value = ''
-  endStationId.value = ''
-  startStationSuggestions.value = []
-  endStationSuggestions.value = []
 }
 
 function validateTimeInput() {
@@ -623,7 +604,6 @@ async function findPath() {
           date: departureDate.value,
           max_paths: 4,
           max_wait_time: 1800,
-          include_rer: includeRER.value
         });
       } else {
         response = await api.getTemporalAlternatives({
@@ -633,7 +613,6 @@ async function findPath() {
           date: departureDate.value,
           max_paths: 4,
           max_wait_time: 1800,
-          include_rer: includeRER.value
         });
       }
       if (response.paths && response.paths.length > 0) {
@@ -660,7 +639,6 @@ async function findPath() {
       const response = await api.post('/shortest-path', {
         start: startStationId.value,
         end: endStationId.value,
-        include_rer: includeRER.value
       });
       
       // Transformer les données de l'API shortest-path pour correspondre au format attendu
@@ -1233,25 +1211,6 @@ function swapStations() {
               </button>
             </div>
           </div>
-
-          <!-- Section des options RER -->
-          <div class="rer-section">
-            <div class="section-title">
-              <span>Options de transport</span>
-            </div>
-            
-            <div class="rer-toggle-container">
-              <button 
-                :class="['rer-toggle-button', { active: includeRER }]"
-                @click="toggleRER"
-              >
-                <span class="rer-toggle-icon"></span>
-                <span class="rer-toggle-text">
-                  {{ includeRER ? 'RER inclus' : 'RER exclus' }}
-                </span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
@@ -1538,16 +1497,37 @@ function swapStations() {
 
           <div v-if="connexityResult" class="connexity-results">
             <div class="result-item">
-              <span class="result-label">Connexité:</span>
-              <span class="result-value" :class="{ connected: connexityResult.connected }">
-                {{ connexityResult.connected ? 'Connecté' : 'Non connecté' }}
+              <span class="result-label">Connexité :</span>
+              <span class="result-value" :class="{ connected: connexityResult.is_connected }">
+                {{ connexityResult.is_connected === true ? 'Connecté' : (connexityResult.is_connected === false ? 'Non connecté' : 'Indéterminé') }}
               </span>
-              </div>
-            <div v-if="connexityResult.components" class="result-item">
-              <span class="result-label">Composantes:</span>
-              <span class="result-value">{{ connexityResult.components }}</span>
             </div>
-              </div>
+            <div class="result-item">
+              <span class="result-label">Stations accessibles :</span>
+              <span class="result-value">{{ connexityResult.reachable_stations ?? '-' }} / {{ connexityResult.total_stations ?? '-' }}</span>
+            </div>
+            <div class="result-item" v-if="connexityResult.unreachable_count > 0">
+              <span class="result-label">Stations inaccessibles :</span>
+              <span class="result-value">{{ connexityResult.unreachable_count }}</span>
+            </div>
+            <div class="result-item" v-if="connexityResult.start_station">
+              <span class="result-label">Station de départ :</span>
+              <span class="result-value">{{ connexityResult.start_station }}</span>
+            </div>
+            <div class="result-item" v-if="connexityResult.unreachable_stations && connexityResult.unreachable_stations.length > 0">
+              <span class="result-label">Exemples inaccessibles :</span>
+              <span class="result-value">
+                <span v-for="station in connexityResult.unreachable_stations.slice(0, 3)" :key="station.id">
+                  {{ station.name }}<span v-if="station.line"> ({{ Array.isArray(station.line) ? station.line.join(', ') : station.line }})</span>{{ $index < 2 ? ', ' : '' }}
+                </span>
+                <span v-if="connexityResult.unreachable_stations.length > 3">... ({{ connexityResult.unreachable_stations.length - 3 }} autres)</span>
+              </span>
+            </div>
+            <div class="result-item" v-if="connexityResult.error">
+              <span class="result-label">Erreur :</span>
+              <span class="result-value" style="color: #ff5252">{{ connexityResult.error }}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
