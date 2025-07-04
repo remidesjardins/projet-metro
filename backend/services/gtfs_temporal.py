@@ -118,7 +118,7 @@ class GTFSemporalService:
         logger.info(f"Données GTFS temporelles chargées en {total_time:.3f}s (routes: {routes_time:.3f}s, trips: {trips_time:.3f}s, stops: {stops_time:.3f}s, transfers: {transfers_time:.3f}s, stop_times: {stop_times_time:.3f}s, travel_times: {travel_time_time:.3f}s)")
     
     def _load_stop_times_cache(self):
-        """Charge le cache global des stop_times pour éviter les relectures"""
+        """Charge le cache global des stop_times pour éviter les relectures - OPTIMISÉ"""
         if self.stop_times_loaded:
             return
             
@@ -135,23 +135,43 @@ class GTFSemporalService:
             except Exception as e:
                 logger.warning(f"[GTFS] Erreur lors du chargement du cache stop_times: {e}")
         
-        # Charger depuis le fichier GTFS
-        logger.info("[GTFS] Chargement du fichier stop_times.txt...")
-        stop_times_df = pd.read_csv(
-            os.path.join(self.gtfs_dir, 'stop_times.txt'),
-            usecols=['trip_id', 'stop_id', 'departure_time', 'arrival_time'],
-            dtype={
-                'trip_id': 'string',
-                'stop_id': 'string',
-                'departure_time': 'string',
-                'arrival_time': 'string'
-            }
-        )
+        # OPTIMISATION RÉVOLUTIONNAIRE: Charger depuis le cache du parser optimisé
+        logger.info("[GTFS] Chargement depuis le cache du parser optimisé...")
         
-        # Grouper par trip_id pour un accès rapide
-        self.stop_times_cache = {}
-        for trip_id, group in stop_times_df.groupby('trip_id'):
-            self.stop_times_cache[trip_id] = group.to_dict('records')
+        # Charger directement depuis le cache du parser optimisé
+        parser_cache_file = Path(self.gtfs_dir).parent / 'cache' / 'metro_graph.pkl'
+        
+        if parser_cache_file.exists():
+            # Le parser optimisé a déjà créé le cache, on peut charger les stop_times filtrés
+            # Créer un cache temporaire des stop_times filtrés
+            self.stop_times_cache = {}
+            
+            # Charger les données GTFS filtrées depuis le parser
+            from utils.gtfs_parser import GTFSMetroParser
+            parser = GTFSMetroParser(self.gtfs_dir)
+            
+            # Convertir le DataFrame stop_times en format cache
+            for trip_id, group in parser.stop_times_df.groupby('trip_id'):
+                self.stop_times_cache[trip_id] = group.to_dict('records')
+            
+            logger.info(f"[GTFS] Stop_times filtrés chargés depuis le parser optimisé: {len(self.stop_times_cache)} entrées")
+        else:
+            # Fallback: charger depuis le fichier GTFS (cas rare)
+            logger.info("[GTFS] Chargement du fichier stop_times.txt (fallback)...")
+            stop_times_df = pd.read_csv(
+                os.path.join(self.gtfs_dir, 'stop_times.txt'),
+                usecols=['trip_id', 'stop_id', 'departure_time', 'arrival_time'],
+                dtype={
+                    'trip_id': 'string',
+                    'stop_id': 'string',
+                    'departure_time': 'string',
+                    'arrival_time': 'string'
+                }
+            )
+            
+            # Grouper par trip_id pour un accès rapide
+            for trip_id, group in stop_times_df.groupby('trip_id'):
+                self.stop_times_cache[trip_id] = group.to_dict('records')
         
         # Sauvegarder en cache
         try:
@@ -164,26 +184,48 @@ class GTFSemporalService:
         self.stop_times_loaded = True
     
     def _load_transfers(self):
-        """Charge les temps de correspondance"""
-        transfers_file = os.path.join(self.gtfs_dir, 'transfers.txt')
-        if os.path.exists(transfers_file):
-            transfers_df = pd.read_csv(
-                transfers_file,
-                usecols=['from_stop_id', 'to_stop_id', 'min_transfer_time'],
-                dtype={'from_stop_id': 'string', 'to_stop_id': 'string', 'min_transfer_time': 'int32'}
-            )
+        """Charge les temps de correspondance - OPTIMISÉ"""
+        # OPTIMISATION: Charger depuis le cache du parser optimisé
+        transfers_cache_file = Path(self.gtfs_dir).parent / 'cache' / 'transfers_filtered.pkl'
+        
+        if transfers_cache_file.exists():
+            # Charger les transfers filtrés depuis le cache
+            with open(transfers_cache_file, 'rb') as f:
+                transfers_df = pickle.load(f)
             
-            # Créer un dictionnaire des temps de correspondance
+            # Convertir les transfers en format attendu
             self.transfers = {}
             for _, row in transfers_df.iterrows():
                 from_name = self.stop_id_to_name.get(row['from_stop_id'])
                 to_name = self.stop_id_to_name.get(row['to_stop_id'])
                 if from_name and to_name:
                     key = (from_name, to_name)
-                    self.transfers[key] = row['min_transfer_time']
+                    # Utiliser min_transfer_time si disponible, sinon 300 secondes par défaut
+                    transfer_time = row.get('min_transfer_time', 300)
+                    self.transfers[key] = transfer_time
+            
+            logger.info(f"[GTFS] Transfers filtrés chargés depuis le cache: {len(self.transfers)} correspondances")
         else:
-            self.transfers = {}
-            logger.warning("Fichier transfers.txt non trouvé")
+            # Fallback: charger depuis le fichier GTFS
+            transfers_file = os.path.join(self.gtfs_dir, 'transfers.txt')
+            if os.path.exists(transfers_file):
+                transfers_df = pd.read_csv(
+                    transfers_file,
+                    usecols=['from_stop_id', 'to_stop_id', 'min_transfer_time'],
+                    dtype={'from_stop_id': 'string', 'to_stop_id': 'string', 'min_transfer_time': 'int32'}
+                )
+                
+                # Créer un dictionnaire des temps de correspondance
+                self.transfers = {}
+                for _, row in transfers_df.iterrows():
+                    from_name = self.stop_id_to_name.get(row['from_stop_id'])
+                    to_name = self.stop_id_to_name.get(row['to_stop_id'])
+                    if from_name and to_name:
+                        key = (from_name, to_name)
+                        self.transfers[key] = row['min_transfer_time']
+            else:
+                self.transfers = {}
+                logger.warning("Fichier transfers.txt non trouvé")
     
     def _get_station_schedules_cache_key(self, station: str, line: str, target_date: date) -> str:
         """Génère une clé de cache pour les horaires d'une station"""

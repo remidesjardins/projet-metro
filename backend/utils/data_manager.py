@@ -98,14 +98,13 @@ class DataManager:
                 # Créer l'entrée dans le graphe
                 graph[station_id] = {}
                 
-                # Utiliser les coordonnées GTFS
+                # Utiliser les coordonnées GTFS (longitude, latitude)
                 if station_name in gtfs_positions:
                     lon, lat = gtfs_positions[station_name]
-                    x = int(lon * 1000)
-                    y = int(lat * 1000)
-                    positions[station_id] = (x, y)
+                    # Convertir en float Python standard pour la sérialisation JSON
+                    positions[station_id] = (float(lon), float(lat))
                 else:
-                    positions[station_id] = (0, 0)
+                    positions[station_id] = (0.0, 0.0)
             
             station_id = station_name_to_id[station_name]
             
@@ -125,14 +124,13 @@ class DataManager:
                     }
                     graph[neighbor_id] = {}
                     
-                    # Utiliser les coordonnées GTFS
+                    # Utiliser les coordonnées GTFS (longitude, latitude)
                     if neighbor_name in gtfs_positions:
                         lon, lat = gtfs_positions[neighbor_name]
-                        x = int(lon * 1000)
-                        y = int(lat * 1000)
-                        positions[neighbor_id] = (x, y)
+                        # Convertir en float Python standard pour la sérialisation JSON
+                        positions[neighbor_id] = (float(lon), float(lat))
                     else:
-                        positions[neighbor_id] = (0, 0)
+                        positions[neighbor_id] = (0.0, 0.0)
                 
                 neighbor_id = station_name_to_id[neighbor_name]
                 

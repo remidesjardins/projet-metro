@@ -239,9 +239,10 @@ async function fetchStations() {
 
 // Charger toutes les stations uniques depuis notre nouvelle API
 function convertPosition(pos) {
-  // Conversion centièmes/millièmes de degrés -> degrés décimaux
+  // Les coordonnées sont maintenant en degrés décimaux directement
+  // L'API retourne [longitude, latitude] mais Leaflet attend [latitude, longitude]
   if (!Array.isArray(pos) || pos.length !== 2) return [0, 0];
-  return [pos[0] / 1000, pos[1] / 1000];
+  return [pos[1], pos[0]]; // Inverser l'ordre : [latitude, longitude]
 }
 
 function getStationType(station) {

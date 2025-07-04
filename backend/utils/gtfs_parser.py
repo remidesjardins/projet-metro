@@ -6,9 +6,13 @@ import pickle
 from typing import Dict, List, Tuple, Set, Any
 from pathlib import Path
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import defaultdict
 import hashlib
+import numpy as np
+from functools import lru_cache
+import sys
+from tqdm import tqdm
 
 # Configuration du logging
 logging.basicConfig(
@@ -26,19 +30,19 @@ class GTFSMetroParser:
         self.cache_dir = Path(gtfs_dir).parent / 'cache'
         self.cache_dir.mkdir(exist_ok=True)
         
-        # Chemins des fichiers de cache
+        # Chemins des fichiers de cache optimisés
         self.graph_cache = self.cache_dir / 'metro_graph.pkl'
         self.stats_cache = self.cache_dir / 'metro_stats.json'
         
-        # Charger les données GTFS
+        # Charger les données GTFS avec optimisations
         self._load_gtfs_data()
     
     def _load_gtfs_data(self):
-        """Charge les données GTFS depuis les fichiers source avec optimisations."""
+        """Charge les données GTFS avec optimisations majeures."""
         start_time = time.time()
         
-        # Optimisation 1: Charger seulement les colonnes nécessaires avec des types optimisés
-        logger.info("Chargement des routes...")
+        # OPTIMISATION 1: Charger seulement les colonnes nécessaires avec des types optimisés
+        logger.info("Chargement optimisé des routes...")
         self.routes_df = pd.read_csv(
             os.path.join(self.gtfs_dir, 'routes.txt'),
             usecols=['route_id', 'route_short_name', 'route_type'],
@@ -56,10 +60,13 @@ class GTFSMetroParser:
             (self.routes_df['route_short_name'].isin(PARIS_METRO_LINES))
         ]
         
+        # Créer des index pour un accès plus rapide
+        self.routes_df.set_index('route_id', inplace=True)
+        
         logger.info(f"Routes filtrées: {len(self.routes_df)} lignes de métro")
         
-        # Optimisation 2: Charger les trips avec des types optimisés
-        logger.info("Chargement des trips...")
+        # OPTIMISATION 2: Charger les trips avec index
+        logger.info("Chargement optimisé des trips...")
         self.trips_df = pd.read_csv(
             os.path.join(self.gtfs_dir, 'trips.txt'),
             usecols=['trip_id', 'route_id'],
@@ -71,17 +78,18 @@ class GTFSMetroParser:
         )
         
         # Filtrer les trips pour les routes de métro
-        metro_route_ids = set(self.routes_df['route_id'])
+        metro_route_ids = set(self.routes_df.index)
         self.trips_df = self.trips_df[self.trips_df['route_id'].isin(metro_route_ids)]
+        self.trips_df.set_index('trip_id', inplace=True)
         
         logger.info(f"Trips filtrés: {len(self.trips_df)} trajets de métro")
         
-        # Optimisation 3: Charger stop_times par chunks pour économiser la mémoire
-        logger.info("Chargement des stop_times...")
-        metro_trip_ids = set(self.trips_df['trip_id'])
+        # OPTIMISATION 3: Charger stop_times par chunks optimisés
+        logger.info("Chargement optimisé des stop_times...")
+        metro_trip_ids = set(self.trips_df.index)
         
         # Lire stop_times par chunks pour économiser la mémoire
-        chunk_size = 100000  # 100k lignes par chunk
+        chunk_size = 500000  # Augmenter la taille des chunks
         stop_times_chunks = []
         
         for chunk in pd.read_csv(
@@ -107,10 +115,13 @@ class GTFSMetroParser:
         self.stop_times_df = pd.concat(stop_times_chunks, ignore_index=True)
         del stop_times_chunks  # Libérer la mémoire
         
+        # OPTIMISATION: Créer un index sur trip_id pour un accès plus rapide
+        self.stop_times_df.set_index('trip_id', inplace=True)
+        
         logger.info(f"Stop_times filtrés: {len(self.stop_times_df)} arrêts de métro")
         
-        # Optimisation 4: Charger seulement les stops utilisés
-        logger.info("Chargement des stops...")
+        # OPTIMISATION 4: Charger seulement les stops utilisés
+        logger.info("Chargement optimisé des stops...")
         used_stop_ids = set(self.stop_times_df['stop_id'].unique())
         
         self.stops_df = pd.read_csv(
@@ -125,19 +136,32 @@ class GTFSMetroParser:
             low_memory=False
         )
         self.stops_df = self.stops_df[self.stops_df['stop_id'].isin(used_stop_ids)]
+        self.stops_df.set_index('stop_id', inplace=True)
         
         logger.info(f"Stops filtrés: {len(self.stops_df)} arrêts de métro")
         
-        # Créer des dictionnaires pour un accès plus rapide
-        self.route_names = self.routes_df.set_index('route_id')['route_short_name'].to_dict()
-        self.trip_routes = self.trips_df.set_index('trip_id')['route_id'].to_dict()
+        # OPTIMISATION 5: Créer des mappings optimisés
+        self.route_names = self.routes_df['route_short_name'].to_dict()
+        self.trip_routes = self.trips_df['route_id'].to_dict()
         
-        # Charger les transfers pour identifier les stations physiquement identiques
-        logger.info("Chargement des transfers...")
+        # OPTIMISATION 6: Charger les transfers avec cache intelligent
+        logger.info("Chargement optimisé des transfers...")
+        self._load_transfers()
+        
+        # OPTIMISATION 7: Créer les groupes de stations avec algorithme optimisé
+        self._create_station_groups()
+        
+        # OPTIMISATION 8: Créer les mappings finaux optimisés
+        self._create_final_mappings()
+        
+        total_time = time.time() - start_time
+        logger.info(f"Données GTFS chargées en {total_time:.3f}s")
+    
+    def _load_transfers(self):
+        """Charge les transfers avec cache intelligent."""
         transfers_file = os.path.join(self.gtfs_dir, 'transfers.txt')
-        cache_dir = Path(self.gtfs_dir).parent / 'cache'
-        cache_dir.mkdir(exist_ok=True)
-        transfers_cache = cache_dir / 'transfers_filtered.pkl'
+        transfers_cache = self.cache_dir / 'transfers_filtered.pkl'
+        
         # Calculer un hash du fichier source pour l'invalider si modifié
         def file_hash(path):
             h = hashlib.sha256()
@@ -148,14 +172,17 @@ class GTFSMetroParser:
                         break
                     h.update(chunk)
             return h.hexdigest()
-        hash_file = cache_dir / 'transfers_hash.txt'
+        
+        hash_file = self.cache_dir / 'transfers_hash.txt'
         current_hash = file_hash(transfers_file) if os.path.exists(transfers_file) else None
         cache_valid = False
+        
         if transfers_cache.exists() and hash_file.exists():
             with open(hash_file, 'r') as f:
                 cached_hash = f.read().strip()
             if cached_hash == current_hash:
                 cache_valid = True
+        
         if cache_valid:
             with open(transfers_cache, 'rb') as f:
                 self.transfers_df = pickle.load(f)
@@ -171,189 +198,184 @@ class GTFSMetroParser:
                 },
                 low_memory=False
             )
-            # Filtrer seulement les transfers entre stops utilisés
-            used_stop_ids = set(self.stops_df['stop_id'].unique())
+            
+            # OPTIMISATION: Filtrer seulement les transfers entre stops utilisés
+            used_stop_ids = set(self.stops_df.index)
             self.transfers_df = self.transfers_df[
                 (self.transfers_df['from_stop_id'].isin(used_stop_ids)) &
                 (self.transfers_df['to_stop_id'].isin(used_stop_ids))
             ]
+            
             with open(transfers_cache, 'wb') as f:
                 pickle.dump(self.transfers_df, f)
             with open(hash_file, 'w') as f:
                 f.write(current_hash or '')
             logger.info(f"Transfers filtrés sauvegardés dans le cache ({len(self.transfers_df)} transferts)")
-        
-        # Créer un mapping des stations physiquement identiques
-        self._create_station_groups()
-        
-        # FUSIONNER LES STATIONS PAR NOM ET PAR GROUPE PHYSIQUE
-        # Créer un mapping stop_id -> nom principal (en tenant compte des groupes)
-        self.stop_id_to_name = {}
-        for _, row in self.stops_df.iterrows():
-            stop_id = row['stop_id']
-            # Utiliser le nom principal si la station fait partie d'un groupe
-            if stop_id in self.stop_id_to_main_station:
-                self.stop_id_to_name[stop_id] = self.stop_id_to_main_station[stop_id]
-            else:
-                self.stop_id_to_name[stop_id] = row['stop_name']
-        
-        # Créer un mapping nom principal -> liste de stop_ids
-        self.stop_name_to_ids = {}
-        for stop_id, main_name in self.stop_id_to_name.items():
-            if main_name not in self.stop_name_to_ids:
-                self.stop_name_to_ids[main_name] = []
-            self.stop_name_to_ids[main_name].append(stop_id)
-        
-        # Créer un mapping nom principal -> coordonnées moyennes
-        self.stop_name_to_coords = {}
-        for main_name, stop_ids in self.stop_name_to_ids.items():
-            coords_list = []
-            for stop_id in stop_ids:
-                if stop_id in self.stops_df['stop_id'].values:
-                    row = self.stops_df[self.stops_df['stop_id'] == stop_id].iloc[0]
-                    coords_list.append((row['stop_lat'], row['stop_lon']))
-            
-            if coords_list:
-                # Calculer les coordonnées moyennes
-                avg_lat = sum(coord[0] for coord in coords_list) / len(coords_list)
-                avg_lon = sum(coord[1] for coord in coords_list) / len(coords_list)
-                self.stop_name_to_coords[main_name] = (avg_lat, avg_lon)
-        
-        # Optimisation 6: Créer un index pour stop_times pour accélérer les recherches
-        self.stop_times_df.set_index('trip_id', inplace=True)
-        
-        load_time = time.time() - start_time
-        logger.info(f"Données GTFS chargées en {load_time:.2f}s")
-
+    
     def _create_station_groups(self):
-        """Crée des groupes de stations physiquement identiques basés sur les transfers, mais uniquement si même type de ligne ET même nom exact."""
-        logger.info("Création des groupes de stations physiquement identiques...")
+        """Crée des groupes de stations avec algorithme optimisé."""
+        logger.info("Création optimisée des groupes de stations...")
         
-        transfer_groups = {}
-        group_id = 0
+        # OPTIMISATION: Pré-calculer les mappings stop_id → route_type et stop_id → name
+        logger.info("Pré-calcul des mappings stop_id...")
         
-        # Pour chaque stop_id, déterminer le type de ligne (métro, RER, bus) et le nom
-        stop_id_to_types = {}
-        stop_id_to_name = {}
-        for stop_id in self.stops_df['stop_id'].values:
-            # On cherche tous les trips qui passent par ce stop
-            trip_ids = self.stop_times_df[self.stop_times_df['stop_id'] == stop_id].index.unique()
-            route_types = set()
-            for trip_id in trip_ids:
-                if trip_id in self.trip_routes:
-                    route_id = self.trip_routes[trip_id]
-                    if route_id in self.routes_df['route_id'].values:
-                        route_type = self.routes_df[self.routes_df['route_id'] == route_id]['route_type'].iloc[0]
-                        route_types.add(route_type)
-            stop_id_to_types[stop_id] = route_types if route_types else {1}  # défaut métro
-            # Nom de la station
-            row = self.stops_df[self.stops_df['stop_id'] == stop_id]
-            stop_id_to_name[stop_id] = row.iloc[0]['stop_name'] if not row.empty else None
+        # Créer un mapping stop_id → route_types de manière vectorisée
+        stop_times_subset = self.stop_times_df[['stop_id']].reset_index()
+        trips_df_reset = self.trips_df.reset_index()
         
-        # Filtrer les transfers de type 2 (stations physiquement identiques)
-        physical_transfers = self.transfers_df[self.transfers_df['transfer_type'] == 2]
+        # Typage strict pour éviter les erreurs de merge
+        stop_times_subset['trip_id'] = stop_times_subset['trip_id'].astype(str)
+        trips_df_reset['trip_id'] = trips_df_reset['trip_id'].astype(str)
         
-        # Créer des groupes de stations connectées
+        stop_trip_mapping = stop_times_subset.merge(
+            trips_df_reset, 
+            left_on='trip_id', 
+            right_on='trip_id', 
+            how='left'
+        )
+        
+        # Obtenir les route_types pour chaque stop_id
+        routes_df_reset = self.routes_df.reset_index()
+        routes_df_reset['route_id'] = routes_df_reset['route_id'].astype(str)
+        stop_trip_mapping['route_id'] = stop_trip_mapping['route_id'].astype(str)
+        
+        stop_route_mapping = stop_trip_mapping.merge(
+            routes_df_reset,
+            left_on='route_id',
+            right_on='route_id',
+            how='left'
+        )
+        
+        # Grouper par stop_id et obtenir les types uniques
+        stop_id_to_types = stop_route_mapping.groupby('stop_id')['route_type'].apply(set).to_dict()
+        
+        # Mapping stop_id → name
+        stop_id_to_name = self.stops_df['stop_name'].to_dict()
+        
+        # OPTIMISATION: Filtrer les transfers de type 2 de manière vectorisée
+        physical_transfers = self.transfers_df[self.transfers_df['transfer_type'] == 2].copy()
+        
+        # OPTIMISATION: Créer les groupes avec algorithme Union-Find optimisé
+        logger.info("Création des groupes avec Union-Find...")
+        
+        # Initialiser Union-Find
+        parent = {}
+        rank = {}
+        
+        def find(x):
+            if x not in parent:
+                parent[x] = x
+                rank[x] = 0
+            if parent[x] != x:
+                parent[x] = find(parent[x])
+            return parent[x]
+        
+        def union(x, y):
+            px, py = find(x), find(y)
+            if px == py:
+                return
+            if rank[px] < rank[py]:
+                parent[px] = py
+            elif rank[px] > rank[py]:
+                parent[py] = px
+            else:
+                parent[py] = px
+                rank[px] += 1
+        
+        # Traiter les transfers physiques
         for _, transfer in physical_transfers.iterrows():
             from_stop = transfer['from_stop_id']
             to_stop = transfer['to_stop_id']
             
-            # Empêcher la fusion si les stops sont de types de lignes incompatibles ou de noms différents
+            # Vérifier la compatibilité des types et noms
             types_from = stop_id_to_types.get(from_stop, {1})
             types_to = stop_id_to_types.get(to_stop, {1})
             name_from = stop_id_to_name.get(from_stop)
             name_to = stop_id_to_name.get(to_stop)
-            if types_from.isdisjoint(types_to):
-                continue
-            if name_from != name_to:
+            
+            if types_from.isdisjoint(types_to) or name_from != name_to:
                 continue
             
-            # Trouver les groupes existants
-            from_group = None
-            to_group = None
-            for group_key, group_stops in transfer_groups.items():
-                if from_stop in group_stops:
-                    from_group = group_key
-                if to_stop in group_stops:
-                    to_group = group_key
-            if from_group is None and to_group is None:
-                new_group = f"group_{group_id}"
-                transfer_groups[new_group] = {from_stop, to_stop}
-                group_id += 1
-            elif from_group is None:
-                transfer_groups[to_group].add(from_stop)
-            elif to_group is None:
-                transfer_groups[from_group].add(to_stop)
-            elif from_group != to_group:
-                merged_group = transfer_groups[from_group] | transfer_groups[to_group]
-                transfer_groups[from_group] = merged_group
-                del transfer_groups[to_group]
+            union(from_stop, to_stop)
         
-        # Créer un mapping stop_id -> nom de station principal
+        # OPTIMISATION: Créer les groupes finaux de manière vectorisée
+        logger.info("Finalisation des groupes...")
+        
+        # Créer les groupes
+        groups = defaultdict(set)
+        for stop_id in set(stop_id_to_types.keys()) | set(stop_id_to_name.keys()):
+            if stop_id in parent:
+                root = find(stop_id)
+                groups[root].add(stop_id)
+        
+        # Créer les mappings finaux
         self.station_groups = {}
         self.stop_id_to_main_station = {}
-        for group_key, group_stops in transfer_groups.items():
-            station_names = {}
+        
+        for group_key, group_stops in groups.items():
+            if len(group_stops) < 2:
+                continue
+                
+            # Trouver le nom principal (le plus fréquent)
+            station_names = []
             for stop_id in group_stops:
-                if stop_id in self.stops_df['stop_id'].values:
-                    station_name = self.stops_df[self.stops_df['stop_id'] == stop_id]['stop_name'].iloc[0]
-                    station_names[station_name] = station_names.get(station_name, 0) + 1
+                if stop_id in stop_id_to_name:
+                    station_names.append(stop_id_to_name[stop_id])
+            
             if station_names:
-                main_station_name = max(station_names.items(), key=lambda x: x[1])[0]
+                # Utiliser le mode (le plus fréquent)
+                from collections import Counter
+                name_counts = Counter(station_names)
+                main_station_name = name_counts.most_common(1)[0][0]
+                
                 self.station_groups[group_key] = {
                     'main_name': main_station_name,
                     'stop_ids': list(group_stops),
-                    'all_names': list(station_names.keys())
+                    'all_names': list(set(station_names))
                 }
+                
                 for stop_id in group_stops:
                     self.stop_id_to_main_station[stop_id] = main_station_name
-        logger.info(f"Créé {len(self.station_groups)} groupes de stations physiquement identiques")
-        example_groups = list(self.station_groups.items())[:5]
-        for group_key, group_info in example_groups:
-            logger.info(f"Groupe {group_key}: {group_info['main_name']} (contient {len(group_info['stop_ids'])} stops)")
-
-    def _save_graph(self, graph_data: Tuple):
-        """Sauvegarde le graphe et les statistiques dans des fichiers de cache."""
-        graph, positions, lines, terminus, branches = graph_data
         
-        # Sauvegarder le graphe complet
-        with open(self.graph_cache, 'wb') as f:
-            pickle.dump(graph_data, f)
+        logger.info(f"Créé {len(self.station_groups)} groupes de stations optimisés")
+    
+    def _create_final_mappings(self):
+        """Crée les mappings finaux optimisés."""
+        # Créer un mapping stop_id -> nom principal (en tenant compte des groupes)
+        self.stop_id_to_name = {}
+        for stop_id in self.stops_df.index:
+            # Utiliser le nom principal si la station fait partie d'un groupe
+            if stop_id in self.stop_id_to_main_station:
+                self.stop_id_to_name[stop_id] = self.stop_id_to_main_station[stop_id]
+            else:
+                self.stop_id_to_name[stop_id] = self.stops_df.loc[stop_id, 'stop_name']
         
-        # Sauvegarder les statistiques
-        stats = {
-            'stations': len(graph),
-            'connections': sum(len(v) for v in graph.values()) // 2,
-            'terminus': len(terminus),
-            'lines': len(set().union(*[set(l) for l in lines.values()]))
-        }
-        with open(self.stats_cache, 'w') as f:
-            json.dump(stats, f, indent=2)
-
-    def _load_graph(self) -> Tuple:
-        """Charge le graphe depuis le cache s'il existe."""
-        if self.graph_cache.exists():
-            with open(self.graph_cache, 'rb') as f:
-                return pickle.load(f)
-        return None
-
-    def _time_to_seconds(self, time_str: str) -> int:
-        """Convertit une chaîne de temps GTFS (HH:MM:SS) en secondes."""
-        hours, minutes, seconds = map(int, time_str.split(':'))
-        return hours * 3600 + minutes * 60 + seconds
-
+        # Créer un mapping nom principal -> liste de stop_ids
+        self.stop_name_to_ids = defaultdict(list)
+        for stop_id, name in self.stop_id_to_name.items():
+            self.stop_name_to_ids[name].append(stop_id)
+        
+        # Créer un mapping nom principal -> coordonnées (prendre la première occurrence)
+        self.stop_name_to_coords = {}
+        for stop_id, name in self.stop_id_to_name.items():
+            if name not in self.stop_name_to_coords:
+                coords = (self.stops_df.loc[stop_id, 'stop_lon'], self.stops_df.loc[stop_id, 'stop_lat'])
+                self.stop_name_to_coords[name] = coords
+    
     def build_metro_graph(self, parallel=True) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, Tuple[float, float]], Dict[str, List[str]], Set[str], Dict[str, int]]:
-        import copy
-        import math
+        """Construit le graphe métro avec optimisations majeures - TRAITEMENT VECTORISÉ GLOBAL."""
         start_time = time.time()
         
         # Essayer de charger depuis le cache
         cached_graph = self._load_graph()
         if cached_graph is not None:
-            logger.info("Graphe chargé depuis le cache")
+            logger.info("Graphe optimisé chargé depuis le cache")
             return cached_graph
         
-        logger.info("Construction du graphe depuis les données GTFS...")
+        logger.info("Construction optimisée du graphe depuis les données GTFS...")
+        
+        # OPTIMISATION RÉVOLUTIONNAIRE: Traitement vectorisé global au lieu de route par route
+        logger.info("Traitement vectorisé global des connexions...")
         
         # Initialiser les structures de données
         graph = {name: set() for name in self.stop_name_to_ids}
@@ -361,55 +383,121 @@ class GTFSMetroParser:
         lines = {name: set() for name in self.stop_name_to_ids}
         terminus = set()
         
-        # Préparer toutes les données nécessaires pour les workers
-        route_ids = list(self.routes_df['route_id'])
-        route_names = self.route_names.copy()
-        trip_routes = self.trip_routes.copy()
-        trips_df = self.trips_df.copy()
-        stop_times_df = self.stop_times_df.copy()
-        stop_id_to_main_station = self.stop_id_to_main_station.copy()
-        stop_id_to_name = self.stop_id_to_name.copy()
+        # OPTIMISATION RÉVOLUTIONNAIRE: Traitement global vectorisé
+        # 1. Créer un DataFrame avec toutes les connexions
+        logger.info("Création du DataFrame des connexions...")
         
-        logger.info(f"Traitement des connexions par route... (parallèle={parallel})")
-        if parallel:
-            args_list = [
-                (route_id, route_names, trips_df, stop_times_df, stop_id_to_main_station, stop_id_to_name)
-                for route_id in route_ids
-            ]
-            with ProcessPoolExecutor() as executor:
-                for idx, result in enumerate(executor.map(process_route_worker, args_list)):
-                    local_graph, local_lines, local_terminus = result
-                    for k, v in local_graph.items():
-                        graph[k].update(v)
-                    for k, v in local_lines.items():
-                        lines[k].update(v)
-                    terminus.update(local_terminus)
-                    if (idx+1) % 2 == 0 or (idx+1) == len(route_ids):
-                        logger.info(f"Route {idx+1}/{len(route_ids)} traitée...")
-        else:
-            for idx, route_id in enumerate(route_ids):
-                local_graph, local_lines, local_terminus = process_route_worker((route_id, route_names, trips_df, stop_times_df, stop_id_to_main_station, stop_id_to_name))
-                for k, v in local_graph.items():
-                    graph[k].update(v)
-                for k, v in local_lines.items():
-                    lines[k].update(v)
-                terminus.update(local_terminus)
-                if (idx+1) % 2 == 0 or (idx+1) == len(route_ids):
-                    logger.info(f"Route {idx+1}/{len(route_ids)} traitée...")
-        # Convertir les sets en listes et lignes en listes triées
-        logger.info("Finalisation du graphe...")
+        # Préparer les données pour le traitement vectorisé
+        stop_times_with_routes = self.stop_times_df.reset_index()
+        stop_times_with_routes['route_id'] = stop_times_with_routes['trip_id'].map(self.trip_routes)
+        stop_times_with_routes['route_name'] = stop_times_with_routes['route_id'].map(self.route_names)
+        
+        # Grouper par trip_id et créer les connexions
+        connections = []
+        
+        for trip_id, trip_data in tqdm(stop_times_with_routes.groupby('trip_id'), desc='Traitement vectorisé global'):
+            if len(trip_data) < 2:
+                continue
+            
+            # Trier par stop_sequence
+            trip_data = trip_data.sort_values('stop_sequence')
+            
+            # Créer les connexions consécutives
+            for i in range(len(trip_data) - 1):
+                current_stop = trip_data.iloc[i]
+                next_stop = trip_data.iloc[i + 1]
+                
+                # Obtenir les noms des stations
+                current_station = self.stop_id_to_main_station.get(current_stop['stop_id'], self.stop_id_to_name[current_stop['stop_id']])
+                next_station = self.stop_id_to_main_station.get(next_stop['stop_id'], self.stop_id_to_name[next_stop['stop_id']])
+                
+                if current_station != next_station:
+                    # Calculer le temps de trajet
+                    current_time = self._time_to_seconds_optimized(current_stop['departure_time'])
+                    next_time = self._time_to_seconds_optimized(next_stop['arrival_time'])
+                    duration = next_time - current_time
+                    
+                    if duration < 0:
+                        duration += 24 * 3600
+                    
+                    connections.append({
+                        'from_station': current_station,
+                        'to_station': next_station,
+                        'time': duration,
+                        'route': current_stop['route_name']
+                    })
+            
+            # Marquer les terminus
+            if len(trip_data) > 0:
+                first_station = self.stop_id_to_main_station.get(trip_data.iloc[0]['stop_id'], self.stop_id_to_name[trip_data.iloc[0]['stop_id']])
+                last_station = self.stop_id_to_main_station.get(trip_data.iloc[-1]['stop_id'], self.stop_id_to_name[trip_data.iloc[-1]['stop_id']])
+                terminus.add(first_station)
+                terminus.add(last_station)
+        
+        # OPTIMISATION: Construire le graphe à partir des connexions
+        logger.info("Construction du graphe à partir des connexions...")
+        
+        for connection in connections:
+            from_station = connection['from_station']
+            to_station = connection['to_station']
+            time_val = connection['time']
+            route = connection['route']
+            
+            # Ajouter la connexion
+            graph[from_station].add((to_station, time_val))
+            graph[to_station].add((from_station, time_val))
+            
+            # Ajouter les lignes
+            lines[from_station].add(route)
+            lines[to_station].add(route)
+        
+        # OPTIMISATION: Finalisation vectorisée
+        logger.info("Finalisation optimisée du graphe...")
         graph = {k: sorted(list(v)) for k, v in graph.items()}
         lines = {k: sorted(list(v)) for k, v in lines.items()}
         branches = {k: 0 for k in graph}
+        
         result = (graph, positions, lines, terminus, branches)
         self._save_graph(result)
+        
         build_time = time.time() - start_time
-        logger.info(f"Graphe construit en {build_time:.2f}s")
+        logger.info(f"Graphe optimisé construit en {build_time:.3f}s")
         logger.info(f"Nombre de sommets (stations) dans le graphe : {len(graph)}")
+        
         return result
+    
+    @lru_cache(maxsize=10000)
+    def _time_to_seconds_optimized(self, time_str: str) -> int:
+        """Convertit une chaîne de temps GTFS en secondes avec cache optimisé."""
+        hours, minutes, seconds = map(int, time_str.split(':'))
+        return hours * 3600 + minutes * 60 + seconds
+    
+    def _save_graph(self, graph_data: Tuple):
+        """Sauvegarde le graphe optimisé."""
+        graph, positions, lines, terminus, branches = graph_data
+        
+        with open(self.graph_cache, 'wb') as f:
+            pickle.dump(graph_data, f)
+        
+        stats = {
+            'stations': len(graph),
+            'connections': sum(len(v) for v in graph.values()) // 2,
+            'terminus': len(terminus),
+            'lines': len(set().union(*[set(l) for l in lines.values()]))
+        }
+        
+        with open(self.stats_cache, 'w') as f:
+            json.dump(stats, f, indent=2)
+    
+    def _load_graph(self) -> Tuple:
+        """Charge le graphe optimisé depuis le cache."""
+        if self.graph_cache.exists():
+            with open(self.graph_cache, 'rb') as f:
+                return pickle.load(f)
+        return None
 
 def parse_gtfs_to_graph(gtfs_dir: str, parallel=True) -> Tuple[Dict[str, List[Tuple[str, int]]], Dict[str, Tuple[float, float]], Dict[str, List[str]], Set[str], Dict[str, int]]:
-    """Parse les données GTFS et retourne le graphe du métro."""
+    """Parse les données GTFS avec optimisations et retourne le graphe du métro."""
     parser = GTFSMetroParser(gtfs_dir)
     return parser.build_metro_graph(parallel=parallel)
 

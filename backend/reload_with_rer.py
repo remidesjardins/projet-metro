@@ -38,14 +38,20 @@ def reload_data():
     try:
         # Importer après avoir effacé le cache
         sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-        from utils.data_manager import DataManager
-        
-        # Forcer le rechargement
-        DataManager.clear_cache()
+        from utils.gtfs_parser import parse_gtfs_to_graph
         
         # Charger les données (cela va recréer le cache avec les RER)
-        print("📊 Chargement des données GTFS...")
-        graph, positions, stations = DataManager.get_data()
+        print("📊 Chargement optimisé des données GTFS...")
+        gtfs_dir = os.path.join(os.path.dirname(__file__), 'data', 'gtfs')
+        graph, positions, lines, terminus, branches = parse_gtfs_to_graph(gtfs_dir)
+        
+        # Convertir au format attendu par l'ancien système
+        stations = {}
+        for station_name, station_lines in lines.items():
+            stations[station_name] = {
+                'line': station_lines,
+                'position': positions.get(station_name, (0, 0))
+            }
         
         print(f"✅ Données rechargées avec succès!")
         print(f"   - Stations: {len(stations)}")

@@ -58,7 +58,7 @@ class Config:
 
 class DevelopmentConfig(Config):
     """Configuration pour le développement"""
-    DEBUG = True
+    DEBUG = False  # Désactivé pour éviter le double chargement
     ENV = 'development'
 
 class ProductionConfig(Config):
