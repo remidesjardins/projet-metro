@@ -65,7 +65,7 @@ export const api = {
         return response.json()
     },
 
-    async getTemporalAlternatives({ start_station, end_station, departure_time, arrival_time, date, max_paths = 4, max_wait_time = 1800, include_rer = true }) {
+    async getTemporalAlternatives({ start_station, end_station, departure_time, arrival_time, date, max_paths = 4, max_wait_time = 1800, include_rer = true, sort_by = 'duration' }) {
         // N'inclure que le champ d'heure fourni
         const data = {
             start_station,
@@ -73,7 +73,8 @@ export const api = {
             date,
             max_paths,
             max_wait_time,
-            include_rer
+            include_rer,
+            sort_by
         };
         if (departure_time) data.departure_time = departure_time;
         if (arrival_time) data.arrival_time = arrival_time;
@@ -81,7 +82,7 @@ export const api = {
         return response;
     },
 
-    async getTemporalAlternativesArrival({ start_station, end_station, arrival_time, date, max_paths = 4, max_wait_time = 1800, include_rer = true }) {
+    async getTemporalAlternativesArrival({ start_station, end_station, arrival_time, date, max_paths = 4, max_wait_time = 1800, include_rer = true, sort_by = 'duration' }) {
         const response = await this.post('/temporal/alternatives-arrival', {
             start_station,
             end_station,
@@ -89,7 +90,8 @@ export const api = {
             date,
             max_paths,
             max_wait_time,
-            include_rer
+            include_rer,
+            sort_by
         });
         return response;
     }

@@ -30,6 +30,9 @@ const showConnexityModal = ref(false)
 const searchMode = ref('classic') // 'classic' ou 'temporal'
 const temporalData = ref(null) // Données temporelles
 
+// Critère de tri pour les itinéraires temporels
+const sortCriterion = ref('duration') // 'duration' ou 'emissions'
+
 // Paramètres temporels
 const departureTime = ref('08:30')
 const departureDate = ref('2024-03-15')
@@ -604,6 +607,7 @@ async function findPath() {
           date: departureDate.value,
           max_paths: 4,
           max_wait_time: 1800,
+            sort_by: sortCriterion.value,
         });
       } else {
         response = await api.getTemporalAlternatives({
@@ -613,6 +617,7 @@ async function findPath() {
           date: departureDate.value,
           max_paths: 4,
           max_wait_time: 1800,
+            sort_by: sortCriterion.value,
         });
       }
       if (response.paths && response.paths.length > 0) {
@@ -1142,6 +1147,27 @@ function swapStations() {
                 </button>
               </div>
             </div>
+            
+            <!-- Critère de tri -->
+            <div class="sort-criterion-section">
+              <span class="sort-criterion-title">Critère de tri</span>
+              <div class="sort-criterion-toggle">
+                <button 
+                  :class="['sort-toggle-btn', { active: sortCriterion === 'duration' }]"
+                  @click="sortCriterion = 'duration'"
+                >
+                  <span class="sort-icon time-icon"></span>
+                  <span>Durée</span>
+                </button>
+                <button 
+                  :class="['sort-toggle-btn', { active: sortCriterion === 'emissions' }]"
+                  @click="sortCriterion = 'emissions'"
+                >
+                  <span class="sort-icon emissions-icon"></span>
+                  <span>CO₂</span>
+                </button>
+              </div>
+            </div>
             <div class="temporal-inputs">
               <div class="input-group">
                 <label :for="timeType === 'departure' ? 'departureTime' : 'arrivalTime'">
@@ -1220,6 +1246,12 @@ function swapStations() {
       <div class="content-wrapper">
         <div class="path-panel-header">
           <h2>Meilleurs itinéraires</h2>
+          <div class="sort-indicator" v-if="searchMode === 'temporal'">
+            <span class="sort-indicator-icon" :class="sortCriterion === 'emissions' ? 'emissions-icon' : 'time-icon'"></span>
+            <span class="sort-indicator-text">
+              Trié par {{ sortCriterion === 'emissions' ? 'émissions CO₂' : 'durée' }}
+            </span>
+          </div>
         </div>
         <div class="alternative-paths-list">
           <div
@@ -1228,15 +1260,50 @@ function swapStations() {
             :class="['alternative-path-summary', { selected: selectedAlternativeIndex === idx }]"
             @click="selectAlternativePath(idx)"
           >
+            <!-- En-tête avec numéro d'itinéraire -->
+            <div class="alt-header">
+              <div class="alt-number">
+                <span class="alt-number-text">Itinéraire {{ idx + 1 }}</span>
+              </div>
+              <div class="alt-emissions-compact">
+                <div class="emissions-badge-compact">
+                  <span class="emissions-icon-small"></span>
+                  <span class="emissions-value-compact">{{ alt.emissions || 0 }}g CO₂</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Lignes utilisées -->
+            <div class="alt-lines-section">
+              <div class="alt-lines-label">Lignes :</div>
             <div class="alt-lines">
               <span v-for="line in getUniqueLines(alt.segments)" :key="line" :class="['suggestion-line-badge', getLineType(line) === 'RER' ? 'rer-badge' : 'metro-badge']" :style="{ backgroundColor: LINE_COLORS[line] || '#1976d2', color: '#fff' }">
                 {{ line }}
               </span>
             </div>
-            <div class="alt-times">
-              <span class="alt-departure">Départ: {{ alt.departure_time }}</span>
-              <span class="alt-arrival">Arrivée: {{ alt.arrival_time }}</span>
-              <span class="alt-duration">Durée: {{ formatTime(alt.total_duration) }}</span>
+            </div>
+            
+            <!-- Informations temporelles -->
+            <div class="alt-times-section">
+              <div class="alt-times-grid">
+                <div class="alt-time-item">
+                  <span class="alt-time-label">Départ</span>
+                  <span class="alt-time-value">{{ alt.departure_time }}</span>
+          </div>
+                <div class="alt-time-item">
+                  <span class="alt-time-label">Arrivée</span>
+                  <span class="alt-time-value">{{ alt.arrival_time }}</span>
+                </div>
+                <div class="alt-time-item">
+                  <span class="alt-time-label">Durée</span>
+                  <span class="alt-time-value">{{ formatTime(alt.total_duration) }}</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- Indicateur de sélection -->
+            <div class="alt-selection-indicator">
+              <div class="selection-arrow">→</div>
             </div>
           </div>
         </div>
@@ -1501,7 +1568,7 @@ function swapStations() {
               <span class="result-value" :class="{ connected: connexityResult.is_connected }">
                 {{ connexityResult.is_connected === true ? 'Connecté' : (connexityResult.is_connected === false ? 'Non connecté' : 'Indéterminé') }}
               </span>
-            </div>
+              </div>
             <div class="result-item">
               <span class="result-label">Stations accessibles :</span>
               <span class="result-value">{{ connexityResult.reachable_stations ?? '-' }} / {{ connexityResult.total_stations ?? '-' }}</span>
@@ -1509,11 +1576,11 @@ function swapStations() {
             <div class="result-item" v-if="connexityResult.unreachable_count > 0">
               <span class="result-label">Stations inaccessibles :</span>
               <span class="result-value">{{ connexityResult.unreachable_count }}</span>
-            </div>
+              </div>
             <div class="result-item" v-if="connexityResult.start_station">
               <span class="result-label">Station de départ :</span>
               <span class="result-value">{{ connexityResult.start_station }}</span>
-            </div>
+        </div>
             <div class="result-item" v-if="connexityResult.unreachable_stations && connexityResult.unreachable_stations.length > 0">
               <span class="result-label">Exemples inaccessibles :</span>
               <span class="result-value">
@@ -1756,6 +1823,35 @@ div[style*="top: var(--spacing-xl)"] {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   flex: 1;
   min-width: 0;
+}
+
+.sort-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(76, 175, 80, 0.15);
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 8px;
+  backdrop-filter: blur(10px);
+}
+
+.sort-indicator-icon {
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.9;
+}
+
+.sort-indicator-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .timeline {
@@ -4477,7 +4573,7 @@ div[style*="top: var(--spacing-xl)"] {
 .alternative-paths-list {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 24px;
   margin-bottom: 16px;
   background: linear-gradient(135deg, rgba(89, 95, 207, 0.85), rgba(81, 171, 187, 0.85));
   border-radius: 24px;
@@ -4489,26 +4585,7 @@ div[style*="top: var(--spacing-xl)"] {
   z-index: 2000;
   font-family: -apple-system, BlinkMacSystemFont, 'San Francisco', 'Helvetica Neue', Arial, sans-serif;
 }
-.alternative-path-summary {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.18), rgba(255,255,255,0.10));
-  border-radius: 16px;
-  padding: 18px 22px;
-  cursor: pointer;
-  border: 2.5px solid transparent;
-  transition: border 0.2s, background 0.2s, box-shadow 0.2s;
-  box-shadow: 0 4px 24px rgba(0,0,0,0.10);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  font-family: inherit;
-}
-.alternative-path-summary.selected {
-  border: 2.5px solid #fff;
-  background: linear-gradient(135deg, rgba(255,255,255,0.28), rgba(255,255,255,0.18));
-  box-shadow: 0 8px 32px rgba(89, 95, 207, 0.18);
-}
+/* Ancien style supprimé - remplacé par la nouvelle structure */
 
 /* S'assurer que la modale de choix masque bien la modale détaillée */
 .floating-panel.fade-in {
@@ -4553,23 +4630,375 @@ div[style*="top: var(--spacing-xl)"] {
   background: rgba(255,255,255,0.18);
   border-radius: 4px;
 }
-.alt-times {
+/* Anciens styles supprimés - remplacés par la nouvelle structure */
+
+/* Styles pour la nouvelle structure des itinéraires alternatifs */
+.alternative-path-summary {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  font-size: 15px;
-  color: #fff;
-  font-weight: 500;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.12);
-  margin-left: 18px;
-  min-width: 120px;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.08));
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
-.alt-departure, .alt-arrival, .alt-duration {
+
+.alternative-path-summary:hover {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.12));
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.alternative-path-summary.selected {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.15));
+  border-color: rgba(76, 175, 80, 0.4);
+  box-shadow: 0 8px 32px rgba(76, 175, 80, 0.2);
+}
+
+/* En-tête de l'itinéraire */
+.alt-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.alt-number {
+  display: flex;
+  align-items: center;
+}
+
+.alt-number-text {
+  font-size: 16px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.alt-emissions-compact {
+  display: flex;
+  align-items: center;
+}
+
+.emissions-badge-compact {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.15));
+  border: 1px solid rgba(76, 175, 80, 0.3);
+  border-radius: 10px;
+  backdrop-filter: blur(15px);
+}
+
+.emissions-value-compact {
+  font-size: 13px;
   font-weight: 600;
-  font-size: 15px;
-  letter-spacing: 0.01em;
-  color: #fff;
-  text-shadow: 0 1.5px 4px rgba(0,0,0,0.10);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+/* Section des lignes */
+.alt-lines-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alt-lines-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.alt-lines {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Section des temps */
+.alt-times-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alt-times-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.alt-time-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.alt-time-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.alt-time-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Indicateur de sélection */
+.alt-selection-indicator {
+  position: absolute;
+  top: 50%;
+  right: 16px;
+  transform: translateY(-50%);
+  opacity: 0;
+  transition: all 0.3s ease;
+}
+
+.alternative-path-summary:hover .alt-selection-indicator {
+  opacity: 1;
+}
+
+.selection-arrow {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(76, 175, 80, 0.2);
+  border: 1px solid rgba(76, 175, 80, 0.4);
+  border-radius: 50%;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Styles pour l'affichage des émissions dans les itinéraires alternatifs (ancien style conservé pour compatibilité) */
+.alt-emissions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+
+.emissions-badge.glassmorphism {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.15));
+  border: 1.5px solid rgba(76, 175, 80, 0.3);
+  border-radius: 14px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 
+    0 8px 24px rgba(76, 175, 80, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  min-width: 80px;
+}
+
+.emissions-badge.glassmorphism::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.1), transparent 50%, rgba(76, 175, 80, 0.05));
+  border-radius: 14px;
+  z-index: -1;
+}
+
+.emissions-badge.glassmorphism:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    0 12px 32px rgba(76, 175, 80, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  border-color: rgba(76, 175, 80, 0.4);
+}
+
+.emissions-icon-small {
+  width: 16px;
+  height: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M7 13l3 3 7-7'%3E%3C/path%3E%3Cpath d='M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z'%3E%3C/path%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.9;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+}
+
+.emissions-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: rgba(255, 255, 255, 0.9);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.emissions-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.98);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+/* Responsive pour les émissions */
+@media (max-width: 768px) {
+  .alt-emissions {
+    margin-left: 0;
+    margin-top: 12px;
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .emissions-badge.glassmorphism {
+    flex-direction: row;
+    gap: 8px;
+    padding: 10px 14px;
+    min-width: auto;
+  }
+  
+  .emissions-label {
+    font-size: 9px;
+  }
+  
+  .emissions-value {
+    font-size: 13px;
+  }
+  
+  /* Responsive pour la nouvelle structure */
+  .alt-times-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  
+  .alt-header {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+  }
+  
+  .alt-selection-indicator {
+    position: static;
+    transform: none;
+    opacity: 1;
+    margin-top: 8px;
+  }
+  
+  .selection-arrow {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+  }
+}
+
+/* Styles pour le critère de tri */
+.sort-criterion-section {
+  margin-top: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.05));
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+  backdrop-filter: blur(20px);
+}
+
+.sort-criterion-title {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.sort-criterion-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.sort-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  color: rgba(255, 255, 255, 0.8);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 14px;
+  font-weight: 600;
+  backdrop-filter: blur(15px);
+  flex: 1;
+  justify-content: center;
+}
+
+.sort-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+  color: rgba(255, 255, 255, 0.95);
+}
+
+.sort-toggle-btn.active {
+  background: linear-gradient(135deg, rgba(76, 175, 80, 0.25), rgba(76, 175, 80, 0.15));
+  border-color: rgba(76, 175, 80, 0.4);
+  color: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 16px rgba(76, 175, 80, 0.2);
+}
+
+.sort-icon {
+  width: 16px;
+  height: 16px;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  opacity: 0.9;
+}
+
+/* Responsive pour le critère de tri */
+@media (max-width: 768px) {
+  .sort-criterion-toggle {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .sort-toggle-btn {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  
+  .sort-icon {
+    width: 14px;
+    height: 14px;
+  }
 }
 
 .swap-button-glass {

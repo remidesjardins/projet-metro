@@ -112,9 +112,9 @@ def get_shortest_path():
                 pos2 = positions.get(next_station_id)
                 
                 if pos1 and pos2:
-                    # pos1 et pos2 sont des [latitude, longitude]
-                    lat1, lon1 = pos1[0]/1000, pos1[1]/1000
-                    lat2, lon2 = pos2[0]/1000, pos2[1]/1000
+                    # pos1 et pos2 sont des (longitude, latitude) en degrés décimaux
+                    lat1, lon1 = pos1[1], pos1[0]  # Inverser car pos1 est (lon, lat)
+                    lat2, lon2 = pos2[1], pos2[0]  # Inverser car pos2 est (lon, lat)
                     
                     # Calculer la distance réelle
                     distance_km = calculate_distance_km(lat1, lon1, lat2, lon2)

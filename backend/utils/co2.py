@@ -37,8 +37,9 @@ def calculate_emissions_from_ids(path, stations, positions):
         pos1 = positions.get(station_id)
         pos2 = positions.get(next_station_id)
         if pos1 and pos2:
-            lat1, lon1 = pos1[0]/1000, pos1[1]/1000
-            lat2, lon2 = pos2[0]/1000, pos2[1]/1000
+            # pos1 et pos2 sont des (longitude, latitude) en degrés décimaux
+            lat1, lon1 = pos1[1], pos1[0]  # Inverser car pos1 est (lon, lat)
+            lat2, lon2 = pos2[1], pos2[0]  # Inverser car pos2 est (lon, lat)
             distance_km = calculate_distance_km(lat1, lon1, lat2, lon2)
             station_type = stations[station_id].get('type', 'metro')
             emission_factor = emission_factors.get(station_type, 2.8)
@@ -61,11 +62,21 @@ def calculate_emissions_from_segments(segments, stations, positions):
     # On suppose que chaque segment a from_station, to_station, line
     # On cherche l'ID correspondant dans stations pour chaque (nom, ligne)
     def find_station_id(name, line):
+        # D'abord, essayer de trouver une correspondance exacte nom + ligne
         for sid, s in stations.items():
             if s['name'] == name:
                 lines = s['line'] if isinstance(s['line'], list) else [s['line']]
                 if line in lines:
                     return sid
+        
+        # Si pas trouvé, essayer de trouver par nom seulement (pour les correspondances)
+        for sid, s in stations.items():
+            if s['name'] == name:
+                return sid
+        
+        # Debug: afficher les stations disponibles pour diagnostiquer
+        print(f"[DEBUG] Station '{name}' ligne '{line}' non trouvée")
+        print(f"[DEBUG] Stations disponibles: {list(stations.keys())[:5]}...")
         return None
     for segment in segments:
         from_id = find_station_id(segment['from_station'], segment['line'])
@@ -74,10 +85,23 @@ def calculate_emissions_from_segments(segments, stations, positions):
             pos1 = positions.get(from_id)
             pos2 = positions.get(to_id)
             if pos1 and pos2:
-                lat1, lon1 = pos1[0]/1000, pos1[1]/1000
-                lat2, lon2 = pos2[0]/1000, pos2[1]/1000
+                # pos1 et pos2 sont des (longitude, latitude) en degrés décimaux
+                lat1, lon1 = pos1[1], pos1[0]  # Inverser car pos1 est (lon, lat)
+                lat2, lon2 = pos2[1], pos2[0]  # Inverser car pos2 est (lon, lat)
                 distance_km = calculate_distance_km(lat1, lon1, lat2, lon2)
                 station_type = stations[from_id].get('type', 'metro')
                 emission_factor = emission_factors.get(station_type, 2.8)
-                total_emissions += distance_km * emission_factor
+                segment_emissions = distance_km * emission_factor
+                total_emissions += segment_emissions
+                
+                # Debug pour diagnostiquer les petites valeurs
+                print(f"[DEBUG] Segment: {segment['from_station']} -> {segment['to_station']} (ligne {segment['line']})")
+                print(f"[DEBUG] Coordonnées: ({lat1:.6f}, {lon1:.6f}) -> ({lat2:.6f}, {lon2:.6f})")
+                print(f"[DEBUG] Distance: {distance_km:.6f} km, Émissions: {segment_emissions:.6f} g CO2")
+            else:
+                print(f"[DEBUG] Positions manquantes pour {segment['from_station']} ou {segment['to_station']}")
+                print(f"[DEBUG] from_id: {from_id}, to_id: {to_id}")
+                print(f"[DEBUG] pos1: {pos1}, pos2: {pos2}")
+    
+    print(f"[DEBUG] Total des émissions: {total_emissions:.6f} g CO2")
     return round(total_emissions, 2) 

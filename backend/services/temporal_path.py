@@ -390,10 +390,19 @@ class TemporalPathService:
         end_station: str, 
         departure_time: datetime,
         max_paths: int = 3,
-        max_wait_time: int = 1800  # 30 minutes max d'attente
+        max_wait_time: int = 1800,  # 30 minutes max d'attente
+        sort_by: str = 'duration'  # 'duration' ou 'emissions'
     ) -> List[TemporalPath]:
         """
         Trouve plusieurs itinéraires alternatifs
+        
+        Args:
+            start_station: Station de départ
+            end_station: Station d'arrivée
+            departure_time: Heure de départ
+            max_paths: Nombre maximum de chemins à retourner
+            max_wait_time: Temps d'attente maximum autorisé
+            sort_by: Critère de tri ('duration' ou 'emissions')
         """
         import time
         t0 = time.time()
@@ -412,9 +421,65 @@ class TemporalPathService:
                     temporal_paths.append(temporal_path)
         logger.info(f"[ALTERNATIVES] {len(temporal_paths)} chemins temporels valides générés pour {start_station} -> {end_station}")
         logger.info(f"[ALTERNATIVES] Temps total évaluation (parallélisé): {time.time() - t0:.3f}s")
-        # Trier par durée et retourner les meilleurs
-        temporal_paths.sort(key=lambda p: (p.total_duration, tuple(seg.from_station for seg in p.segments)))
+        
+        # Trier selon le critère choisi
+        if sort_by == 'emissions':
+            # Calculer les émissions pour chaque chemin et trier
+            temporal_paths_with_emissions = []
+            for path in temporal_paths:
+                emissions = self._calculate_path_emissions(path)
+                temporal_paths_with_emissions.append((path, emissions))
+            
+            # Trier par émissions croissantes
+            temporal_paths_with_emissions.sort(key=lambda x: (x[1], x[0].total_duration))
+            temporal_paths = [path for path, _ in temporal_paths_with_emissions]
+            logger.info(f"[ALTERNATIVES] Chemins triés par émissions CO2")
+        else:
+            # Trier par durée (comportement par défaut)
+            temporal_paths.sort(key=lambda p: (p.total_duration, tuple(seg.from_station for seg in p.segments)))
+            logger.info(f"[ALTERNATIVES] Chemins triés par durée")
+        
         return temporal_paths[:max_paths]
+
+    def _calculate_path_emissions(self, path: TemporalPath) -> float:
+        """
+        Calcule les émissions de CO2 d'un chemin temporel
+        
+        Args:
+            path: Chemin temporel
+            
+        Returns:
+            Émissions en grammes de CO2
+        """
+        try:
+            from utils.co2 import calculate_emissions_from_segments
+            from utils.data_manager import DataManager
+            
+            # Convertir les segments temporels en format compatible avec le calcul CO2
+            segments_for_co2 = []
+            for segment in path.segments:
+                segments_for_co2.append({
+                    "from_station": segment.from_station,
+                    "to_station": segment.to_station,
+                    "line": segment.line,
+                    "departure_time": segment.departure_time.strftime("%H:%M:%S"),
+                    "arrival_time": segment.arrival_time.strftime("%H:%M:%S"),
+                    "wait_time": segment.wait_time,
+                    "travel_time": segment.travel_time,
+                    "transfer_time": segment.transfer_time
+                })
+            
+            # Obtenir les données nécessaires pour le calcul CO2
+            graph, positions, stations = DataManager.get_data()
+            
+            # Calculer les émissions
+            emissions = calculate_emissions_from_segments(segments_for_co2, stations, positions)
+            return emissions
+            
+        except Exception as e:
+            logger.error(f"[EMISSIONS] Erreur lors du calcul des émissions: {e}")
+            # Retourner une valeur par défaut en cas d'erreur
+            return 0.0
 
     def find_optimal_temporal_path_with_arrival_time(
         self, 

@@ -238,12 +238,19 @@ def get_alternative_paths():
             data.get('date')
         )
         max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
+        sort_by = data.get('sort_by', 'duration')  # 'duration' ou 'emissions'
+        
+        # Valider le paramètre de tri
+        if sort_by not in ['duration', 'emissions']:
+            sort_by = 'duration'
+        
         temporal_service, _, _ = get_services()
         paths = temporal_service.find_alternative_paths(
             start_station=data['start_station'],
             end_station=data['end_station'],
             departure_time=departure_time,
-            max_paths=max_paths
+            max_paths=max_paths,
+            sort_by=sort_by
         )
         if not paths:
             return jsonify({
@@ -257,7 +264,8 @@ def get_alternative_paths():
                 "end_station": data['end_station'],
                 "departure_time": data['departure_time'],
                 "date": data.get('date'),
-                "paths_count": len(path_responses)
+                "paths_count": len(path_responses),
+                "sort_by": sort_by
             }
         }
         return jsonify(response)
@@ -556,6 +564,12 @@ def get_alternative_paths_arrival():
             data.get('date')
         )
         max_paths = data.get('max_paths', Config.TEMPORAL_DEFAULT_MAX_PATHS)
+        sort_by = data.get('sort_by', 'duration')  # 'duration' ou 'emissions'
+        
+        # Valider le paramètre de tri
+        if sort_by not in ['duration', 'emissions']:
+            sort_by = 'duration'
+        
         temporal_service, _, _ = get_services()
         paths = temporal_service.find_optimal_temporal_path_with_arrival_time_all(
             start_station=data['start_station'],
@@ -568,6 +582,19 @@ def get_alternative_paths_arrival():
             return jsonify({
                 "error": f"Aucun chemin trouvé entre {data['start_station']} et {data['end_station']} pour arriver à {data['arrival_time']}"
             }), 404
+        
+        # Trier selon le critère choisi
+        if sort_by == 'emissions':
+            # Calculer les émissions pour chaque chemin et trier
+            paths_with_emissions = []
+            for path in paths:
+                emissions = temporal_service._calculate_path_emissions(path)
+                paths_with_emissions.append((path, emissions))
+            
+            # Trier par émissions croissantes
+            paths_with_emissions.sort(key=lambda x: (x[1], x[0].total_duration))
+            paths = [path for path, _ in paths_with_emissions]
+        
         # Limiter au nombre de chemins demandés
         paths = paths[:max_paths]
         path_responses = [convert_temporal_path_to_dict(path) for path in paths]
@@ -578,7 +605,8 @@ def get_alternative_paths_arrival():
                 "end_station": data['end_station'],
                 "arrival_time": data['arrival_time'],
                 "date": data.get('date'),
-                "paths_count": len(path_responses)
+                "paths_count": len(path_responses),
+                "sort_by": sort_by
             }
         }
         return jsonify(response)
