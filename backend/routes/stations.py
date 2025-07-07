@@ -126,19 +126,20 @@ def get_stations_list():
 @stations_bp.route('/stations/ordered_by_line', methods=['GET'])
 def get_stations_ordered_by_line():
     """
-    Retourne, pour chaque ligne, un tableau de branches (chaque branche = séquence complète depuis le terminus principal jusqu'au bout de la branche, en passant par la bifurcation).
-    Pour chaque composante connexe du sous-graphe, génère le chemin le plus long entre deux terminus (ou un chemin simple si pas de terminus), sans cycle.
+    Retourne, pour chaque ligne, TOUTES les branches (y compris les bifurcations).
     """
     graph, positions, stations = load_data()
     from collections import defaultdict, deque
+    
     # Regrouper les stations par ligne
     line_to_station_ids = defaultdict(list)
-    # Pour chaque ligne, construire le graphe de la ligne
     line_graphs = defaultdict(lambda: defaultdict(list))
+    
     for station_id, station in stations.items():
         lines = station['line'] if isinstance(station['line'], list) else [station['line']]
         for line in lines:
             line_to_station_ids[line].append(station_id)
+    
     # Construire le graphe de chaque ligne
     for line, ids in line_to_station_ids.items():
         for station_id in ids:
@@ -146,84 +147,98 @@ def get_stations_ordered_by_line():
                 neighbor_lines = stations[neighbor_id]['line'] if isinstance(stations[neighbor_id]['line'], list) else [stations[neighbor_id]['line']]
                 if line in neighbor_lines:
                     line_graphs[line][station_id].append(neighbor_id)
+    
     result = {}
     for line, g in line_graphs.items():
-        # Trouver toutes les composantes connexes du sous-graphe
-        visited_global = set()
+        
+        # 1. Identifier tous les terminus (degré 1)
+        terminus = []
+        for station_id, neighbors in g.items():
+            if len(neighbors) == 1:
+                terminus.append(station_id)
+        
+        print(f"Ligne {line}: {len(terminus)} terminus trouvés: {[stations[t]['name'] for t in terminus]}")
+        
         branches = []
-        for node in g:
-            if node in visited_global:
-                continue
-            # BFS pour trouver la composante connexe
-            component = set()
-            queue = deque([node])
-            while queue:
-                u = queue.popleft()
-                if u in component:
-                    continue
-                component.add(u)
-                for v in g[u]:
-                    if v not in component:
-                        queue.append(v)
-            visited_global.update(component)
-            # Pour cette composante, trouver les terminus
-            subg = {k: g[k] for k in component}
-            terminus = [sid for sid, neighbors in subg.items() if len(neighbors) == 1]
-            # Si au moins 2 terminus, chercher le chemin le plus long entre eux
-            if len(terminus) >= 2:
-                # Pour chaque couple de terminus, chercher le chemin le plus long
-                max_path = []
-                for i in range(len(terminus)):
-                    for j in range(i+1, len(terminus)):
-                        start, end = terminus[i], terminus[j]
-                        # BFS pour trouver le chemin simple entre start et end
-                        queue2 = deque([(start, [start])])
-                        visited2 = set()
-                        while queue2:
-                            current, path = queue2.popleft()
-                            if current == end:
-                                if len(path) > len(max_path):
-                                    max_path = path
-                                break
-                            visited2.add(current)
-                            for neighbor in subg[current]:
-                                if neighbor not in visited2 and neighbor not in path:
-                                    queue2.append((neighbor, path + [neighbor]))
-                if max_path:
-                    branch = [{
-                        'id': sid,
-                        'name': stations[sid]['name'],
-                        'position': positions.get(sid)
-                    } for sid in max_path]
-                    branches.append(branch)
-            else:
-                # Pas de terminus (cycle ou composante isolée) : DFS pour un chemin couvrant tous les sommets sans repasser
-                def dfs_path(u, visited, path):
-                    visited.add(u)
-                    path.append(u)
-                    if len(visited) == len(subg):
-                        return list(path)
-                    for v in subg[u]:
-                        if v not in visited:
-                            res = dfs_path(v, visited, path)
-                            if res:
-                                return res
-                    path.pop()
-                    visited.remove(u)
+        
+        if len(terminus) >= 2:
+            def find_path_between(start, end):
+                """BFS pour trouver le chemin entre deux terminus"""
+                if start == end:
                     return None
-                found = False
-                for start in subg:
-                    visited = set()
-                    path = []
-                    res = dfs_path(start, visited, path)
-                    if res:
+                
+                queue = deque([(start, [start])])
+                visited = {start}
+                
+                while queue:
+                    current, path = queue.popleft()
+                    
+                    if current == end:
+                        return path
+                    
+                    for neighbor in g[current]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append((neighbor, path + [neighbor]))
+                
+                return None
+            
+            processed_pairs = set()
+            
+            for i, start_terminus in enumerate(terminus):
+                for j, end_terminus in enumerate(terminus):
+                    if i >= j:  # Éviter les doublons (A->B et B->A)
+                        continue
+                    
+                    pair = tuple(sorted([start_terminus, end_terminus]))
+                    if pair in processed_pairs:
+                        continue
+                    processed_pairs.add(pair)
+                    
+                    path = find_path_between(start_terminus, end_terminus)
+                    if path and len(path) >= 2:
                         branch = [{
                             'id': sid,
                             'name': stations[sid]['name'],
                             'position': positions.get(sid)
-                        } for sid in res]
+                        } for sid in path]
                         branches.append(branch)
-                        found = True
-                        break
+                        
+                        print(f"  → Branche trouvée: {stations[start_terminus]['name']} → {stations[end_terminus]['name']} ({len(path)} stations)")
+        
+        elif len(g) > 0:
+            print(f"  → Ligne {line}: Pas de terminus trouvés, utilisation du fallback")
+            
+            # Trouver le nœud avec le plus petit ID comme point de départ
+            start_node = min(g.keys())
+            
+            # DFS pour parcourir toute la ligne
+            def dfs_all_stations(start):
+                visited = set()
+                path = []
+                
+                def dfs(node):
+                    visited.add(node)
+                    path.append(node)
+                    
+                    for neighbor in g[node]:
+                        if neighbor not in visited:
+                            dfs(neighbor)
+                
+                dfs(start)
+                return path
+            
+            path = dfs_all_stations(start_node)
+            if len(path) >= 2:
+                branch = [{
+                    'id': sid,
+                    'name': stations[sid]['name'],
+                    'position': positions.get(sid)
+                } for sid in path]
+                branches.append(branch)
+        
+        print(f"  → {len(branches)} branche(s) générée(s) pour la ligne {line}")
+        
         result[line] = branches
-    return jsonify(result) 
+    
+    return jsonify(result)
