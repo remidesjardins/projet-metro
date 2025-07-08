@@ -1,8 +1,11 @@
-#!/usr/bin/env python3
 """
-Tests unitaires pour la fonctionnalité d'itinéraire avec horaire d'arrivée
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: test_arrival_path.py
+Description: Tests unitaires pour les calculs de chemins avec heure d'arrivée souhaitée
 """
 
+import pytest
 import unittest
 import sys
 import os

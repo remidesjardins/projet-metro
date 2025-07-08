@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: data_manager.py
+Description: Gestionnaire de données avec cache persistant pour optimiser le chargement GTFS
+"""
+
 import logging
 import time
 import pickle
@@ -5,6 +12,7 @@ import gzip
 from pathlib import Path
 from typing import Dict, Tuple, Any, Optional
 from .gtfs_parser import parse_gtfs_to_graph
+import os
 
 logger = logging.getLogger(__name__)
 

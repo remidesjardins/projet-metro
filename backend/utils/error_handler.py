@@ -1,6 +1,10 @@
 """
-Système de gestion d'erreurs standardisé pour l'API
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: error_handler.py
+Description: Gestionnaire d'erreurs centralisé pour l'API Flask avec logging structuré
 """
+
 from flask import jsonify
 from typing import Dict, Any, Optional
 import logging

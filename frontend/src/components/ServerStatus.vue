@@ -1,3 +1,9 @@
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: ServerStatus.vue
+  Description: Composant affichant le statut de connexion au serveur backend
+-->
 <template>
   <div class="server-status">
     <div class="status-indicator" :class="{ 'online': isOnline, 'offline': !isOnline }">
@@ -62,8 +68,8 @@ onMounted(() => {
 }
 
 .status-text {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
 }
 </style> 

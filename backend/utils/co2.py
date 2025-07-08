@@ -1,4 +1,13 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: co2.py
+Description: Calculateur d'émissions CO2 pour les trajets de métro et RER
+"""
+
 import math
+
+# Facteurs d'émissions CO2 par type de transport (en g CO2 / km / passager)
 
 def calculate_distance_km(lat1, lon1, lat2, lon2):
     """
@@ -58,10 +67,9 @@ def calculate_emissions_from_segments(segments, stations, positions):
         'rer': 2.9,
         'bus': 19.0
     }
-    # On reconstitue la liste d'IDs de stations à partir des noms et lignes
-    # On suppose que chaque segment a from_station, to_station, line
-    # On cherche l'ID correspondant dans stations pour chaque (nom, ligne)
+    
     def find_station_id(name, line):
+        """Trouve l'ID de station correspondant au nom et à la ligne."""
         # D'abord, essayer de trouver une correspondance exacte nom + ligne
         for sid, s in stations.items():
             if s['name'] == name:
@@ -74,10 +82,8 @@ def calculate_emissions_from_segments(segments, stations, positions):
             if s['name'] == name:
                 return sid
         
-        # Debug: afficher les stations disponibles pour diagnostiquer
-        print(f"[DEBUG] Station '{name}' ligne '{line}' non trouvée")
-        print(f"[DEBUG] Stations disponibles: {list(stations.keys())[:5]}...")
         return None
+    
     for segment in segments:
         from_id = find_station_id(segment['from_station'], segment['line'])
         to_id = find_station_id(segment['to_station'], segment['line'])
@@ -93,15 +99,5 @@ def calculate_emissions_from_segments(segments, stations, positions):
                 emission_factor = emission_factors.get(station_type, 2.8)
                 segment_emissions = distance_km * emission_factor
                 total_emissions += segment_emissions
-                
-                # Debug pour diagnostiquer les petites valeurs
-                print(f"[DEBUG] Segment: {segment['from_station']} -> {segment['to_station']} (ligne {segment['line']})")
-                print(f"[DEBUG] Coordonnées: ({lat1:.6f}, {lon1:.6f}) -> ({lat2:.6f}, {lon2:.6f})")
-                print(f"[DEBUG] Distance: {distance_km:.6f} km, Émissions: {segment_emissions:.6f} g CO2")
-            else:
-                print(f"[DEBUG] Positions manquantes pour {segment['from_station']} ou {segment['to_station']}")
-                print(f"[DEBUG] from_id: {from_id}, to_id: {to_id}")
-                print(f"[DEBUG] pos1: {pos1}, pos2: {pos2}")
     
-    print(f"[DEBUG] Total des émissions: {total_emissions:.6f} g CO2")
     return round(total_emissions, 2) 

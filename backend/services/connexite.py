@@ -1,6 +1,14 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: connexite.py
+Description: Service de vérification de la connexité du réseau de métro parisien
+"""
+
 from typing import Dict, Set, List, Tuple
 from utils.parser import load_data
 import logging
+from collections import deque
 
 class ConnexiteChecker:
     def __init__(self):
@@ -114,12 +122,15 @@ def test_connexite():
     
     return is_connected, checker.get_unreachable_stations()
 
-if __name__ == '__main__':
-    # Test de la connexité
+def main():
+    """Fonction de démonstration de la vérification de connexité."""
+    graph, _, stations = load_data()
     checker = ConnexiteChecker()
     is_connected = checker.is_connected()
     unreachable = checker.get_unreachable_stations()
     
-    # Affichage des résultats (supprimé pour la production)
-    # print(f"Le graphe est {'connexe' if is_connected else 'non connexe'}")
-    # print(f"Stations non accessibles: {len(unreachable)}")
+    # Les résultats peuvent être affichés ou loggés selon les besoins
+
+if __name__ == '__main__':
+    main()
+    

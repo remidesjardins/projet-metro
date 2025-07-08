@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: config.py
+Description: Configuration de l'application Flask avec gestion des environnements
+"""
+
 # Configuration de l'application
 import os
 from pathlib import Path

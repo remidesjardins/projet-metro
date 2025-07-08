@@ -1,4 +1,11 @@
-from flask import Blueprint, jsonify
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: cache.py
+Description: Routes Flask pour la gestion du cache de données GTFS
+"""
+
+from flask import Blueprint, jsonify, request
 from utils.data_manager import DataManager
 import time
 import logging
@@ -39,21 +46,30 @@ def reload_cache():
     try:
         start_time = time.time()
         
-        # Effacer le cache existant
+        # Chargement depuis le cache (si disponible)
+        graph1, positions1, stations1 = DataManager.get_data()
+        cache_time = time.time() - start_time
+        
+        start_time = time.time()
+        
+        # Forcer le rechargement en vidant d'abord le cache
         DataManager.clear_cache()
-        
-        # Recharger les données
-        graph, positions, stations = DataManager.get_data()
-        
+        graph2, positions2, stations2 = DataManager.get_data()
         reload_time = time.time() - start_time
+        
+        start_time = time.time()
+        
+        # Accès mémoire (données déjà chargées)
+        graph3, positions3, stations3 = DataManager.get_data()
+        memory_time = time.time() - start_time
         
         logger.info(f"Données rechargées en {reload_time:.3f}s")
         
         return jsonify({
             'message': 'Données rechargées avec succès',
             'reload_time': reload_time,
-            'stations_count': len(stations),
-            'connections_count': sum(len(v) for v in graph.values()) // 2
+            'stations_count': len(stations1),
+            'connections_count': sum(len(v) for v in graph1.values()) // 2
         })
     except Exception as e:
         logger.error(f"Erreur lors du rechargement des données: {str(e)}")

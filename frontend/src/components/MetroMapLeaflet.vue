@@ -1,4 +1,9 @@
-```vue
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: MetroMapLeaflet.vue
+  Description: Composant principal de la carte interactive utilisant Leaflet pour afficher le réseau de métro
+-->
 <template>
   <div class="map-container">
     <!-- Panneau supprimé - remplacé par le panneau unifié dans HomeView -->
@@ -202,7 +207,7 @@ async function fetchStations() {
         if (station.ids && station.ids.length > 0) id = station.ids[0];
         else if (station.id) id = station.id;
         if (!id) {
-          console.warn('Station sans id détectée (ignorée):', station);
+          // Station sans id ignorée
         }
         return id ? {
           id,
@@ -212,8 +217,6 @@ async function fetchStations() {
         } : null;
       })
       .filter(station => station !== null);
-    // Log des 5 premières stations pour debug
-    console.log('Stations (5 premières):', stations.value.slice(0, 5));
     // Charger aussi allStations pour les trajets temporels
     allStations.value = data.stations.filter(s => s.position && Array.isArray(s.position) && s.position.length === 2)
       .map(station => {
@@ -221,7 +224,7 @@ async function fetchStations() {
         if (station.ids && station.ids.length > 0) id = station.ids[0];
         else if (station.id) id = station.id;
         if (!id) {
-          console.warn('Station sans id détectée (ignorée):', station);
+          // Station sans id ignorée
         }
         return id ? {
           id,
@@ -231,9 +234,8 @@ async function fetchStations() {
         } : null;
       })
       .filter(station => station !== null);
-    console.log('allStations (5 premières):', allStations.value.slice(0, 5));
   } catch (error) {
-    console.error('Erreur lors du chargement des stations:', error)
+    // Erreur lors du chargement des stations
   }
 }
 
@@ -298,30 +300,7 @@ function getIconUrl(station) {
 
 // Fonctions de recherche supprimées - gérées maintenant dans HomeView
 
-// Fonction pour formater le temps en minutes et secondes
-function formatTime(seconds) {
-    if (!seconds) return '0m 0s'
-    const minutes = Math.floor(seconds / 60)
-    const remainingSeconds = Math.round(seconds % 60)
-    return `${minutes}m ${remainingSeconds}s`
-}
 
-function debugPolylines() {
-  // Créer un chemin de test simple
-  const center1 = [IMAGE_HEIGHT/2 - 100, IMAGE_WIDTH/2 - 100]
-  const center2 = [IMAGE_HEIGHT/2 + 100, IMAGE_WIDTH/2 + 100]
-
-  // Chemin de test visible au centre de la carte
-  debugPath.value = [center1, center2]
-
-  // Ajoutons un segment de test dans shortestPath
-  shortestPath.value.push({
-    path: [center1, center2],
-    color: '#FF0000',
-    weight: 10,
-    opacity: 1.0
-  })
-}
 
 function initializeMap() {
   nextTick(() => {
@@ -333,43 +312,19 @@ function initializeMap() {
 
 // Watchers pour les changements de données
 watch(showLines, (newValue) => {
-  console.log('[MetroMapLeaflet] showLines changé:', newValue)
-  console.log('[MetroMapLeaflet] linesPolylines actuel:', linesPolylines.value.length, 'lignes')
+  // Mise à jour de l'affichage des lignes
 })
 
 watch(linesPolylines, (newValue) => {
-  console.log('[MetroMapLeaflet] linesPolylines changé:', newValue.length, 'lignes')
-  console.log('[MetroMapLeaflet] Détail des lignes:', newValue)
-  
-  // Vérifier que chaque ligne a les bonnes propriétés
-  newValue.forEach((line, index) => {
-    console.log(`[MetroMapLeaflet] Ligne ${index}:`, {
-      line: line.line,
-      pathLength: line.path ? line.path.length : 0,
-      color: line.color,
-      hasPath: !!line.path
-    })
-    
-    // Afficher les coordonnées de la première ligne pour debug
-    if (index === 0 && line.path && line.path.length > 0) {
-      console.log('[MetroMapLeaflet] Coordonnées de la ligne 1:', line.path.slice(0, 5)) // Afficher les 5 premiers points
-    }
-  })
+  // Traitement des nouvelles polylines de lignes
 }, { deep: true })
 
 watch(acpmPath, (newValue) => {
-  console.log('[MetroMapLeaflet] acpmPath changé:', newValue.length, 'chemins')
-  console.log('[MetroMapLeaflet] Détail des chemins ACPM:', newValue)
-  
-  // Afficher le détail du premier chemin pour debug
-  if (newValue.length > 0) {
-    console.log('[MetroMapLeaflet] Premier chemin ACPM:', newValue[0])
-    console.log('[MetroMapLeaflet] Coordonnées du premier chemin:', newValue[0].path)
-  }
+  // Traitement des nouveaux chemins ACPM
 })
 
 watch(showACPM, (newValue) => {
-  console.log('[MetroMapLeaflet] showACPM changé:', newValue)
+  // Mise à jour de l'affichage ACPM
 })
 
 // Watcher pour le zoom afin de mettre à jour la taille des icônes
@@ -426,8 +381,7 @@ watch(pathDetails, (newPathDetails) => {
     return
   }
 
-  console.log('[MetroMapLeaflet] pathDetails reçus:', newPathDetails)
-  console.log('[MetroMapLeaflet] allStations disponibles:', allStations.value.length)
+  // Traitement des nouveaux détails de chemin
 
   // Remettre à zéro le chemin sur la carte
   shortestPath.value = []
@@ -438,12 +392,7 @@ watch(pathDetails, (newPathDetails) => {
     const isShortestPathFormat = segment.hasOwnProperty('Ligne') && segment.hasOwnProperty('Stations')
     const isTemporalFormat = segment.hasOwnProperty('line') && segment.hasOwnProperty('stations')
     
-    console.log(`[MetroMapLeaflet] Segment ${segmentIndex}:`, {
-      isShortestPathFormat,
-      isTemporalFormat,
-      line: segment.line || segment.Ligne,
-      stationsCount: segment.stations?.length || segment.Stations?.length
-    })
+    // Analyse du format du segment
     
     let line, stations
     
@@ -501,17 +450,12 @@ watch(pathDetails, (newPathDetails) => {
             const latLng = convertPosition(station.position)
             pathCoordinates.push(latLng)
           } else {
-            console.warn(`[MetroMapLeaflet] Station non trouvée: ${stationName}`)
+            // Station non trouvée dans la liste
           }
         })
       }
 
-      console.log(`[MetroMapLeaflet] Segment temporel ${segmentIndex}:`, {
-        line,
-        stationsCount: stations.length,
-        pathCoordinatesCount: pathCoordinates.length,
-        pathCoordinates: pathCoordinates.slice(0, 3) // Afficher les 3 premiers points
-      })
+      // Coordonnées du segment temporel calculées
 
       if (pathCoordinates.length >= 2) {
         shortestPath.value.push({
@@ -527,17 +471,14 @@ watch(pathDetails, (newPathDetails) => {
     }
   })
   
-  console.log('[MetroMapLeaflet] shortestPath final:', shortestPath.value.length, 'segments')
+  // Chemin final mis à jour
 }, { deep: true })
 
 watch(
   allStations,
   (newVal) => {
     if (newVal && newVal.length > 0) {
-      console.log('MetroMapLeaflet: allStations (5 premières après update):', newVal.slice(0, 5));
-      newVal.slice(0, 5).forEach(station => {
-        console.log('Coordonnées converties:', station.name, convertPosition(station.position));
-      });
+      // Stations mises à jour
     }
   },
   { immediate: true }
@@ -550,13 +491,9 @@ onMounted(async () => {
     
     // Initialiser la carte après le montage du composant
     initializeMap();
-    if (allStations.value && allStations.value.length > 0) {
-      console.log('MetroMapLeaflet: allStations (5 premières):', allStations.value.slice(0, 5));
-    } else {
-      console.warn('MetroMapLeaflet: allStations vide ou non défini');
-    }
+    // Stations chargées
   } catch (error) {
-    console.error("Erreur lors de l'initialisation:", error);
+    // Erreur lors de l'initialisation
   }
 })
 </script>

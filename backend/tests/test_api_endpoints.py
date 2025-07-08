@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: test_api_endpoints.py
+Description: Tests d'intégration pour tous les endpoints de l'API Flask
+"""
+
 import pytest
 from app import app
 import json

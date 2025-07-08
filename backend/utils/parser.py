@@ -1,5 +1,8 @@
 """
-Module de parsing des données du métro parisien.
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: parser.py
+Description: Parser principal pour charger les données de métro depuis le cache ou GTFS
 
 Ce module gère le chargement et le parsing des données GTFS (General Transit Feed Specification)
 pour créer les structures de données nécessaires aux algorithmes de calcul d'itinéraires.
@@ -188,21 +191,21 @@ if __name__ == '__main__':
     first_station_id = next(iter(stations))
     
     # Statistiques générales
-    print(f"Nombre total de stations : {len(stations)}")
-    print(f"Nombre total de positions : {len(positions)}")
-    print(f"Nombre total de connexions : {sum(len(neighbors) for neighbors in graph.values()) // 2}")
-    print(f"Nombre de stations terminus : {sum(1 for station in stations.values() if station['terminus'])}")
-    print(f"Nombre de stations avec branche : {sum(1 for station in stations.values() if station['branche'] > 0)}")
+    logger.info(f"Nombre total de stations : {len(stations)}")
+    logger.info(f"Nombre total de positions : {len(positions)}")
+    logger.info(f"Nombre total de connexions : {sum(len(neighbors) for neighbors in graph.values()) // 2}")
+    logger.info(f"Nombre de stations terminus : {sum(1 for station in stations.values() if station['terminus'])}")
+    logger.info(f"Nombre de stations avec branche : {sum(1 for station in stations.values() if station['branche'] > 0)}")
     
     # Vérification de cohérence
-    print(f"Toutes les stations ont-elles une position ? : {all(station_id in positions for station_id in stations)}")
-    print(f"Toutes les stations ont-elles des voisins ? : {all(len(neighbors) > 0 for neighbors in graph.values())}") 
+    logger.info(f"Toutes les stations ont-elles une position ? : {all(station_id in positions for station_id in stations)}")
+    logger.info(f"Toutes les stations ont-elles des voisins ? : {all(len(neighbors) > 0 for neighbors in graph.values())}") 
     
     # Informations sur le cache
     cache_info = DataManager.get_cache_info()
-    print(f"\nInformations sur le cache:")
-    print(f"Cache chargé: {cache_info.get('cache_loaded', False)}")
-    print(f"Données en mémoire: {cache_info.get('data_in_memory', False)}")
-    print(f"Fichier de cache existe: {cache_info.get('cache_file_exists', False)}")
+    logger.info(f"\nInformations sur le cache:")
+    logger.info(f"Cache chargé: {cache_info.get('cache_loaded', False)}")
+    logger.info(f"Données en mémoire: {cache_info.get('data_in_memory', False)}")
+    logger.info(f"Fichier de cache existe: {cache_info.get('cache_file_exists', False)}")
     if 'cache_size_mb' in cache_info:
-        print(f"Taille du cache: {cache_info['cache_size_mb']:.2f} MB") 
+        logger.info(f"Taille du cache: {cache_info['cache_size_mb']:.2f} MB") 

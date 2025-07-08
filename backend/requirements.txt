@@ -3,3 +3,4 @@ flask-cors==4.0.0
 flask-compress==1.14
 pytest==8.0.2
 pandas==2.2.1
+tqdm==4.66.1

@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: temporal_path_flask.py
+Description: Routes Flask pour les calculs de chemins temporels avec horaires GTFS
+"""
+
 from flask import Blueprint, request, jsonify
 from datetime import datetime, date, timedelta
 import logging
@@ -270,13 +277,13 @@ def get_alternative_paths():
         }
         return jsonify(response)
     except ValueError as e:
-        print(f"[ALTERNATIVES][ValueError] {e}")
+        logger.error(f"[ALTERNATIVES][ValueError] {e}")
         return jsonify({"error": str(e)}), 400
     except Exception as e:
+        logger.error(f"[ALTERNATIVES][Exception] {e}")
         import traceback
-        print(f"[ALTERNATIVES][Exception] {e}")
-        print(traceback.format_exc())
-        return jsonify({"error": "Erreur interne du serveur", "details": str(e)}), 500
+        logger.error(traceback.format_exc())
+        return jsonify({"error": "Erreur interne du serveur"}), 500
 
 @temporal_bp.route('/stations', methods=['GET'])
 def get_stations():
@@ -451,49 +458,78 @@ def group_segments_by_line(segments: list) -> list:
     for i in range(1, len(segments)):
         segment = segments[i]
         
-        # Si même ligne et pas de transfert, regrouper
-        if segment['line'] == current_line and segment['transfer_time'] == 0:
+        # Si même ligne, regrouper (peu importe le transfer_time)
+        # Le transfer_time peut être > 0 pour les correspondances temporaires dans la même ligne
+        if segment['line'] == current_line:
             current_group.append(segment)
         else:
             # Finaliser le groupe actuel
-            if len(current_group) > 1:
-                # Créer un segment regroupé
-                grouped_segment = {
-                    "from_station": current_group[0]['from_station'],
-                    "to_station": current_group[-1]['to_station'],
-                    "line": current_line,
-                    "departure_time": current_group[0]['departure_time'],
-                    "arrival_time": current_group[-1]['arrival_time'],
-                    "wait_time": current_group[0]['wait_time'],
-                    "travel_time": sum(s['travel_time'] for s in current_group),
-                    "transfer_time": current_group[0]['transfer_time']
-                }
-                grouped.append(grouped_segment)
-            else:
-                # Garder le segment seul
-                grouped.append(current_group[0])
+            grouped_segment = create_grouped_segment(current_group, current_line)
+            grouped.append(grouped_segment)
             
             # Commencer un nouveau groupe
             current_group = [segment]
             current_line = segment['line']
     
     # Finaliser le dernier groupe
-    if len(current_group) > 1:
-        grouped_segment = {
-            "from_station": current_group[0]['from_station'],
-            "to_station": current_group[-1]['to_station'],
-            "line": current_line,
-            "departure_time": current_group[0]['departure_time'],
-            "arrival_time": current_group[-1]['arrival_time'],
-            "wait_time": current_group[0]['wait_time'],
-            "travel_time": sum(s['travel_time'] for s in current_group),
-            "transfer_time": current_group[0]['transfer_time']
-        }
-        grouped.append(grouped_segment)
-    else:
-        grouped.append(current_group[0])
+    grouped_segment = create_grouped_segment(current_group, current_line)
+    grouped.append(grouped_segment)
     
     return grouped
+
+def create_grouped_segment(group: list, line: str) -> dict:
+    """Crée un segment regroupé avec toutes les stations intermédiaires"""
+    if len(group) == 1:
+        # Si un seul segment, garder la structure originale mais ajouter la liste des stations
+        segment = group[0].copy()
+        segment['stations'] = [segment['from_station'], segment['to_station']]
+        return segment
+    
+    # Construire la liste complète des stations
+    stations = [group[0]['from_station']]  # Station de départ
+    
+    # Ajouter toutes les stations intermédiaires
+    for segment in group:
+        stations.append(segment['to_station'])
+    
+    # Créer le segment regroupé
+    grouped_segment = {
+        "from_station": group[0]['from_station'],
+        "to_station": group[-1]['to_station'],
+        "line": line,
+        "departure_time": group[0]['departure_time'],
+        "arrival_time": group[-1]['arrival_time'],
+        "wait_time": group[0]['wait_time'],
+        "travel_time": sum(s['travel_time'] for s in group),
+        "transfer_time": group[0]['transfer_time'],
+        "stations": stations,  # Liste complète des stations
+        "duration": sum(s['travel_time'] for s in group),  # Durée totale du segment
+        # Ajouter les horaires par station si disponibles
+        "stationTimes": {}
+    }
+    
+    # Construire les horaires par station si disponibles
+    current_time_str = group[0]['departure_time']
+    if stations:
+        # Heure de départ pour la première station
+        grouped_segment["stationTimes"][stations[0]] = {
+            "departure": current_time_str
+        }
+        
+        # Pour chaque segment, calculer les horaires
+        station_index = 1
+        for segment in group:
+            if station_index < len(stations):
+                station_name = stations[station_index]
+                grouped_segment["stationTimes"][station_name] = {
+                    "arrival": segment['arrival_time']
+                }
+                # Si ce n'est pas la dernière station, ajouter aussi l'heure de départ
+                if station_index < len(stations) - 1:
+                    grouped_segment["stationTimes"][station_name]["departure"] = segment['arrival_time']
+                station_index += 1
+    
+    return grouped_segment
 
 @temporal_bp.route('/transfer-test', methods=['POST'])
 def test_transfer():
@@ -611,12 +647,12 @@ def get_alternative_paths_arrival():
         }
         return jsonify(response)
     except ValueError as e:
-        print(f"[ALTERNATIVES_ARRIVAL][ValueError] {e}")
+        logger.error(f"[ALTERNATIVES_ARRIVAL][ValueError] {e}")
         return jsonify({"error": str(e)}), 400
     except Exception as e:
+        logger.error(f"[ALTERNATIVES_ARRIVAL][Exception] {e}")
         import traceback
-        print(f"[ALTERNATIVES_ARRIVAL][Exception] {e}")
-        print(traceback.format_exc())
+        logger.error(traceback.format_exc())
         return jsonify({"error": "Erreur interne du serveur", "details": str(e)}), 500
 
 def get_services():

@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: dijkstra.py
+Description: Service d'implémentation de l'algorithme de Dijkstra pour les plus courts chemins
+"""
+
 from utils.parser import load_data
 import heapq
 from typing import Dict, List, Tuple, Any
@@ -108,10 +115,10 @@ def shortest_path_by_name(start_name: str, end_name: str) -> Tuple[List[str], in
         raise ValueError(f"Aucun chemin trouvé entre '{start_name}' et '{end_name}'")
 
 def main():
-    # Test de l'algorithme de Dijkstra
+    """Fonction de test de l'algorithme de Dijkstra."""
     graph, positions, stations = load_data()
     
-    # Test avec des stations existantes
+    # Exemple d'utilisation avec des stations existantes
     start_station = '0000'  # Abbesses
     end_station = '0016'    # Bastille
     
@@ -119,12 +126,10 @@ def main():
         dist, path = dijkstra(graph, start_station, end_station)
         
         if path:
-            # Affichage des résultats (supprimé pour la production)
-            # print(f"Chemin trouvé : {print_path(path, stations)}")
-            # print(f"Durée totale : {dist} secondes (soit {dist/60:.1f} minutes)")
+            # Traitement du chemin trouvé
             pass
         else:
-            # print("Aucun chemin trouvé.")
+            # Aucun chemin trouvé
             pass
 
 if __name__ == "__main__":

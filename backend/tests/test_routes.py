@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: test_routes.py
+Description: Tests d'intégration pour toutes les routes de l'API Flask
+"""
+
 import pytest
 from app import app
 import json
@@ -128,7 +135,7 @@ def test_get_connexity(client):
     for station in stations_data['stations']:
         if len(station['lines']) > 1:
             correspondence_stations.append(station['name'])
-            if len(correspondance_stations) >= 3:  # Tester avec 3 stations de correspondance
+            if len(correspondence_stations) >= 3:  # Tester avec 3 stations de correspondance
                 break
     
     for test_station in correspondence_stations:

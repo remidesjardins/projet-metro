@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: gtfs_parser.py
+Description: Utilitaire de parsing des données GTFS pour construire le graphe du métro parisien
+"""
+
 import os
 import pandas as pd
 import logging
@@ -92,8 +99,14 @@ class GTFSMetroParser:
         chunk_size = 500000  # Augmenter la taille des chunks
         stop_times_chunks = []
         
-        for chunk in pd.read_csv(
-            os.path.join(self.gtfs_dir, 'stop_times.txt'),
+        # Obtenir la taille totale du fichier pour estimer le nombre de chunks
+        stop_times_file = os.path.join(self.gtfs_dir, 'stop_times.txt')
+        with open(stop_times_file, 'r') as f:
+            total_lines = sum(1 for _ in f) - 1  # -1 pour l'en-tête
+        estimated_chunks = max(1, total_lines // chunk_size)
+        
+        chunk_reader = pd.read_csv(
+            stop_times_file,
             usecols=['trip_id', 'stop_id', 'stop_sequence', 'departure_time', 'arrival_time'],
             dtype={
                 'trip_id': 'string',
@@ -105,7 +118,9 @@ class GTFSMetroParser:
             chunksize=chunk_size,
             low_memory=False,
             quoting=1
-        ):
+        )
+        
+        for chunk in tqdm(chunk_reader, total=estimated_chunks, desc='Chargement stop_times'):
             # Filtrer le chunk pour ne garder que les trips de métro
             filtered_chunk = chunk[chunk['trip_id'].isin(metro_trip_ids)]
             if not filtered_chunk.empty:
@@ -283,7 +298,7 @@ class GTFSMetroParser:
                 rank[px] += 1
         
         # Traiter les transfers physiques
-        for _, transfer in physical_transfers.iterrows():
+        for _, transfer in tqdm(physical_transfers.iterrows(), total=len(physical_transfers), desc='Traitement transfers physiques'):
             from_stop = transfer['from_stop_id']
             to_stop = transfer['to_stop_id']
             

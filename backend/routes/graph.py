@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: graph.py
+Description: Routes Flask pour l'accès au graphe complet du métro parisien
+"""
+
 from flask import Blueprint, jsonify
 from utils.parser import load_data
 

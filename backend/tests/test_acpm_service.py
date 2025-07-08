@@ -1,3 +1,11 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: test_acpm_service.py
+Description: Tests unitaires pour le service d'Arbre Couvrant de Poids Minimum (Kruskal)
+"""
+
+import unittest
 import pytest
 from services.kruskal import kruskal_mst
 from utils.parser import load_data

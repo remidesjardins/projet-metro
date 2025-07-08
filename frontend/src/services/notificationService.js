@@ -1,4 +1,11 @@
-import { ref } from 'vue'
+/*
+ * MetroCity - Mastercamp 2025
+ * Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+ * Fichier: notificationService.js
+ * Description: Service de gestion des notifications (erreurs, succès, chargement)
+ */
+
+import { ref, reactive } from 'vue'
 
 // État global des notifications
 const errorNotification = ref({
@@ -196,7 +203,7 @@ export const notificationService = {
 
   // Gérer automatiquement les erreurs d'API
   handleApiError(error, context = '') {
-    console.error(`API Error in ${context}:`, error)
+    // Traitement de l'erreur API
     
     if (error.responseData) {
       // Erreur avec données de réponse

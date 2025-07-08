@@ -1,3 +1,9 @@
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: LoadingNotification.vue
+  Description: Composant de notification de chargement avec animation
+-->
 <template>
   <Transition name="loading-slide" appear>
     <div v-if="show" class="loading-notification-overlay">

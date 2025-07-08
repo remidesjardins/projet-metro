@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: graph_service.py
+Description: Service de gestion du graphe de métro avec algorithmes de recherche de chemins
+"""
+
 import heapq
 from typing import Dict, List, Tuple, Optional, Set
 from collections import defaultdict
@@ -136,10 +143,8 @@ class GraphService:
             for neighbor, weight_data in neighbor_items:
                 # Extraire le poids du nouveau format
                 if isinstance(weight_data, list) and weight_data:
-                    # Nouveau format: liste de dictionnaires avec {'time': X, 'line': Y}
                     weight = weight_data[0]['time']  # Prendre le premier temps disponible
                 elif isinstance(weight_data, int):
-                    # Ancien format: entier direct
                     weight = weight_data
                 else:
                     continue  # Ignorer les formats invalides
@@ -314,10 +319,8 @@ class GraphService:
                 if neighbor not in visited:
                     # Extraire le poids du nouveau format
                     if isinstance(weight_data, list) and weight_data:
-                        # Nouveau format: liste de dictionnaires avec {'time': X, 'line': Y}
                         weight = weight_data[0]['time']  # Prendre le premier temps disponible
                     elif isinstance(weight_data, int):
-                        # Ancien format: entier direct
                         weight = weight_data
                     else:
                         continue  # Ignorer les formats invalides

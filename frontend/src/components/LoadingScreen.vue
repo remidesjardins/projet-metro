@@ -1,3 +1,9 @@
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: LoadingScreen.vue
+  Description: Écran de chargement initial de l'application
+-->
 <template>
   <div class="loading-screen" v-if="isLoading">
     <div class="loading-container glass">
@@ -102,11 +108,11 @@ const checkLoadingStatus = async () => {
       }, 1000)
     }
   } catch (error) {
-    console.error('Erreur lors de la vérification du statut de chargement:', error)
+    // Erreur lors de la vérification du statut de chargement
     
     // Si on a trop d'erreurs consécutives, arrêter le polling
     if (errorCount > 5) {
-      console.warn('Trop d\'erreurs, arrêt du polling de statut')
+      // Trop d'erreurs, arrêt du polling de statut
       clearInterval(statusInterval)
       setTimeout(() => {
         isLoading.value = false

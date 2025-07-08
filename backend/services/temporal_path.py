@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: temporal_path.py
+Description: Service de calcul de chemins temporels avec horaires GTFS et optimisation multi-critères
+"""
+
 import heapq
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple

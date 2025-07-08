@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: shortest_path.py
+Description: Routes Flask pour le calcul des plus courts chemins entre stations
+"""
+
 from flask import Blueprint, jsonify, request
 from flask_cors import cross_origin
 from services.dijkstra import dijkstra

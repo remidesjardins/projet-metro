@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: itineraire.py
+Description: Routes Flask pour le calcul d'itinéraires avec optimisation multi-critères
+"""
+
 from flask import Blueprint, jsonify, request
 from services.dijkstra import shortest_path_by_name
 from utils.parser import load_data

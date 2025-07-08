@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: acpm.py
+Description: Routes Flask pour le calcul de l'Arbre Couvrant de Poids Minimum (Kruskal)
+"""
+
 from flask import Blueprint, jsonify
 from flask_cors import cross_origin
 from services.kruskal import kruskal_mst
@@ -8,7 +15,12 @@ acpm_bp = Blueprint('acpm', __name__)
 @acpm_bp.route('/acpm', methods=['GET'])
 @cross_origin()
 def get_mst():
-    """Retourne l'arbre couvrant de poids minimal (ACPM) calculé par Kruskal."""
+    """
+    Calcule l'Arbre Couvrant de Poids Minimum (ACPM) du réseau de métro.
+    
+    Returns:
+        JSON: ACPM avec arêtes, poids total et statistiques
+    """
     graph, positions, stations = load_data()
     
     # Calculer l'ACPM
@@ -37,25 +49,28 @@ def get_mst():
     rank = {s: 0 for s in graph}
     
     def find(x):
+        """Trouve le représentant de l'ensemble contenant x (Union-Find)."""
         if parent[x] != x:
-            parent[x] = find(parent[x])
+            parent[x] = find(parent[x])  # Compression de chemin
         return parent[x]
     
     def union(x, y):
-        xroot = find(x)
-        yroot = find(y)
-        if xroot == yroot:
-            return False
-        if rank[xroot] < rank[yroot]:
-            parent[xroot] = yroot
-        else:
-            parent[yroot] = xroot
-            if rank[xroot] == rank[yroot]:
-                rank[xroot] += 1
-        return True
+        """Unit deux ensembles contenant x et y (Union-Find)."""
+        root_x = find(x)
+        root_y = find(y)
+        if root_x != root_y:
+            if rank[root_x] < rank[root_y]:
+                parent[root_x] = root_y
+            elif rank[root_x] > rank[root_y]:
+                parent[root_y] = root_x
+            else:
+                parent[root_y] = root_x
+                rank[root_x] += 1
     
     for weight, s1, s2 in edges:
-        if union(s1, s2):
+        if find(s1) != find(s2):  # Si pas déjà connectés
+            union(s1, s2)  # Les connecter
+            
             # S'assurer que le poids est un nombre
             numeric_weight = weight if isinstance(weight, (int, float)) else int(weight)
             

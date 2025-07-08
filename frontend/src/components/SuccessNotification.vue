@@ -1,3 +1,9 @@
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: SuccessNotification.vue
+  Description: Composant de notification de succès avec animation
+-->
 <template>
   <Transition name="success-slide" appear>
     <div v-if="show" class="success-notification-overlay" @click="handleOverlayClick">

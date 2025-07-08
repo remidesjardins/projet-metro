@@ -1,3 +1,9 @@
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: App.vue
+  Description: Composant principal de l'application Vue.js qui gère le routage
+-->
 <script setup>
 import { RouterView } from 'vue-router'
 </script>

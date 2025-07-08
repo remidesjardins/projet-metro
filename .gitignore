@@ -1,23 +1,72 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
 .env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
 # Node.js
 node_modules/
 dist/
 .vite/
+.nuxt/
+.output/
+
+# OS generated files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# OS / Logs
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
 *.log
+logs/
 
-.idea
-
+# Cache et données temporaires
+backend/data/cache/
+backend/data/branch_analysis_cache.json
 backend/data/gtfs/stop_times.txt
 backend/data/cache/metro_graph.pkl
 backend/data/cache/metro_stats.json
 backend/data/cache/temporal/global_stop_times.pkl
-
-# Cache temporal - fichiers générés automatiquement
 backend/data/cache/temporal/*.pkl
+backend/data/cache/transfers_filtered.pkl
+backend/data/cache/transfers_hash.txt
+backend/data/cache/global_data.pkl.gz
+
+# Fichiers de données obsolètes
+backend/data/metro.txt
+backend/data/pospoint.txt
+backend/data/pospoint_clean.txt
+backend/data/Ligne_M7.md
+
+# Tests temporaires
+backend/test_*_manual.py
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+
+# Production
+.env.production

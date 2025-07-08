@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: kruskal.py
+Description: Service d'implémentation de l'algorithme de Kruskal pour l'Arbre Couvrant de Poids Minimum
+"""
+
 from utils.parser import load_data
 from typing import List, Tuple
 
@@ -42,8 +49,8 @@ def kruskal_mst(edges, n):
                 break
     return mst, total_weight
 
-if __name__ == '__main__':
-    # Test du calcul de l'ACPM
+def main():
+    """Fonction de démonstration du calcul de l'ACPM."""
     graph, positions, stations = load_data()
     
     # Calculer l'ACPM
@@ -67,5 +74,7 @@ if __name__ == '__main__':
     mst, total_weight = kruskal_mst(edges, len(graph))
     
     # Affichage des résultats (supprimé pour la production)
-    # print(f"Poids total de l'arbre couvrant : {total_weight}")
-    # print(f"Nombre d'arêtes dans l'ACPM : {len(mst)}")
+
+if __name__ == '__main__':
+    main()
+

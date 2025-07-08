@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: stations.py
+Description: Routes Flask pour la gestion des stations de métro et leurs informations
+"""
+
 from flask import Blueprint, jsonify, request
 from utils.parser import load_data
 import logging
@@ -7,9 +14,14 @@ from collections import defaultdict, deque
 logger = logging.getLogger(__name__)
 stations_bp = Blueprint('stations', __name__)
 
-@stations_bp.route('/stations', methods=['GET', 'HEAD'])
+@stations_bp.route('/stations', methods=['GET'])
 def get_stations():
-    """Retourne la liste des stations avec leurs coordonnées, groupées par nom."""
+    """
+    Retourne toutes les stations avec leurs informations et positions.
+    
+    Returns:
+        JSON: Dictionnaire des stations avec positions et métadonnées
+    """
     start_time = time.time()
     
     try:
@@ -79,7 +91,12 @@ def get_stations():
 
 @stations_bp.route('/stations/list', methods=['GET'])
 def get_stations_list():
-    """Retourne la liste des stations uniques avec leurs lignes associées et leurs IDs."""
+    """
+    Retourne la liste simple des noms de stations.
+    
+    Returns:
+        JSON: Liste alphabétique des noms de stations uniques
+    """
     start_time = time.time()
     
     try:
@@ -157,7 +174,8 @@ def get_stations_ordered_by_line():
             if len(neighbors) == 1:
                 terminus.append(station_id)
         
-        print(f"Ligne {line}: {len(terminus)} terminus trouvés: {[stations[t]['name'] for t in terminus]}")
+        # Afficher les terminus (debug)
+        # logger.debug(f"Ligne {line}: {len(terminus)} terminus trouvés: {[stations[t]['name'] for t in terminus]}")
         
         branches = []
         
@@ -197,47 +215,17 @@ def get_stations_ordered_by_line():
                     
                     path = find_path_between(start_terminus, end_terminus)
                     if path and len(path) >= 2:
+                        # logger.debug(f"  → Branche trouvée: {stations[start_terminus]['name']} → {stations[end_terminus]['name']} ({len(path)} stations)")
                         branch = [{
-                            'id': sid,
-                            'name': stations[sid]['name'],
-                            'position': positions.get(sid)
-                        } for sid in path]
+                            'station': station_id,
+                            'name': stations[station_id]['name']
+                        } for station_id in path]
                         branches.append(branch)
-                        
-                        print(f"  → Branche trouvée: {stations[start_terminus]['name']} → {stations[end_terminus]['name']} ({len(path)} stations)")
+        else:
+            # logger.debug(f"  → Ligne {line}: Pas de terminus trouvés, utilisation du fallback")
+            pass
         
-        elif len(g) > 0:
-            print(f"  → Ligne {line}: Pas de terminus trouvés, utilisation du fallback")
-            
-            # Trouver le nœud avec le plus petit ID comme point de départ
-            start_node = min(g.keys())
-            
-            # DFS pour parcourir toute la ligne
-            def dfs_all_stations(start):
-                visited = set()
-                path = []
-                
-                def dfs(node):
-                    visited.add(node)
-                    path.append(node)
-                    
-                    for neighbor in g[node]:
-                        if neighbor not in visited:
-                            dfs(neighbor)
-                
-                dfs(start)
-                return path
-            
-            path = dfs_all_stations(start_node)
-            if len(path) >= 2:
-                branch = [{
-                    'id': sid,
-                    'name': stations[sid]['name'],
-                    'position': positions.get(sid)
-                } for sid in path]
-                branches.append(branch)
-        
-        print(f"  → {len(branches)} branche(s) générée(s) pour la ligne {line}")
+        # logger.debug(f"  → {len(branches)} branche(s) générée(s) pour la ligne {line}")
         
         result[line] = branches
     

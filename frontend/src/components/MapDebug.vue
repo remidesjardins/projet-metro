@@ -1,3 +1,9 @@
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: MapDebug.vue
+  Description: Composant de débogage pour la carte (développement)
+-->
 <template>
   <div class="debug-container">
     <div class="map-container">

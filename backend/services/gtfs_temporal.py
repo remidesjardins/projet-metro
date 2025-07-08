@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: gtfs_temporal.py
+Description: Service de gestion des données temporelles GTFS avec calcul d'horaires optimaux
+"""
+
 import os
 import pandas as pd
 import logging

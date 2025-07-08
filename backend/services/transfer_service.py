@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: transfer_service.py
+Description: Service de gestion des correspondances et temps de transfert entre lignes
+"""
+
 import os
 import pandas as pd
 import logging

@@ -1,3 +1,11 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: test_parser.py
+Description: Tests unitaires pour les parsers de données GTFS et de cache
+"""
+
+import unittest
 import pytest
 from utils.parser import load_data, parse_metro_file, parse_pospoints_file
 import os
@@ -22,6 +30,7 @@ def test_load_data():
         assert station_id in graph
         assert station_id in positions
 
+@pytest.mark.skip(reason="Test obsolète - utilise les anciens fichiers metro.txt qui n'existent plus avec le système GTFS")
 def test_parse_metro_file():
     """Test le parsing du fichier metro.txt."""
     metro_file = os.path.join('data', 'metro.txt')
@@ -38,6 +47,7 @@ def test_parse_metro_file():
             assert isinstance(weight, (int, float))
             assert weight > 0
 
+@pytest.mark.skip(reason="Test obsolète - utilise les anciens fichiers pospoint.txt qui n'existent plus avec le système GTFS")
 def test_parse_pospoints_file():
     """Test le parsing du fichier pospoints.txt."""
     pospoints_file = os.path.join('data', 'pospoint.txt')

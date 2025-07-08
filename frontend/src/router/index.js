@@ -1,3 +1,10 @@
+/*
+ * MetroCity - Mastercamp 2025
+ * Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+ * Fichier: index.js
+ * Description: Configuration du routeur Vue Router pour l'application
+ */
+
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import MapDebug from '../components/MapDebug.vue'

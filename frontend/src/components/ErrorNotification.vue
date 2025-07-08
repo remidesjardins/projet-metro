@@ -1,3 +1,9 @@
+<!--
+  MetroCity - Mastercamp 2025
+  Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+  Fichier: ErrorNotification.vue
+  Description: Composant de notification d'erreur avec animation et détails
+-->
 <template>
   <Transition name="error-slide" appear>
     <div v-if="show" class="error-notification-overlay" @click="handleOverlayClick">

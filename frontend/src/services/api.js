@@ -1,3 +1,12 @@
+/*
+ * MetroCity - Mastercamp 2025
+ * Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+ * Fichier: api.js
+ * Description: Service de communication avec l'API backend
+ */
+
+const BASE_URL = 'http://localhost:5001/api'
+
 // Configuration de l'API avec variables d'environnement
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5050'
 
@@ -94,5 +103,30 @@ export const api = {
             sort_by
         });
         return response;
+    },
+
+    async getACPM() {
+        const response = await fetch(`${API_URL}/acpm`)
+        if (!response.ok) {
+            throw new Error('Erreur lors de la récupération de l\'ACPM')
+        }
+        const data = await response.json()
+        return {
+            status: 'success',
+            acpm_edges: data.mst || [],
+            total_weight: data.total_weight || 0
+        }
+    },
+
+    async getLines() {
+        const response = await fetch(`${API_URL}/stations/ordered_by_line`)
+        if (!response.ok) {
+            throw new Error('Erreur lors de la récupération des lignes')
+        }
+        const data = await response.json()
+        return {
+            status: 'success',
+            lines: data || {}
+        }
     }
 }

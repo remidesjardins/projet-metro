@@ -1,3 +1,11 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: test_connexite_service.py
+Description: Tests unitaires pour le service de vérification de connexité du réseau
+"""
+
+import unittest
 import pytest
 from services.connexite import ConnexiteChecker
 from utils.parser import load_data

@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: app.py
+Description: Application Flask principale gérant l'API REST du système de métro parisien
+"""
+
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_compress import Compress

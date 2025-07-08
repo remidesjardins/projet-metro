@@ -1,3 +1,10 @@
+"""
+MetroCity - Mastercamp 2025
+Auteurs: Laura Donato, Alexandre Borny, Gabriel Langlois, Rémi Desjardins
+Fichier: test_temporal_alternatives_summary.py
+Description: Tests unitaires pour les résumés de chemins alternatifs temporels
+"""
+
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + '/../'))

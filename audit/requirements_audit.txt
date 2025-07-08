@@ -1,0 +1,29 @@
+# MetroCity - Audit de Performance
+# Dépendances pour l'audit de performance et impact écologique
+
+# Dépendances système et monitoring
+psutil>=5.9.0
+requests>=2.28.0
+
+# Analyse de données et visualisation
+numpy>=1.21.0
+pandas>=1.5.0
+matplotlib>=3.5.0
+
+# Gestion des dates et temps
+python-dateutil>=2.8.0
+
+# Sérialisation et configuration
+dataclasses-json>=0.5.0
+
+# Dépendances Flask (héritées du backend)
+Flask>=2.2.0
+Flask-CORS>=4.0.0
+Flask-Compress>=1.13
+
+# Dépendances géospatiales (si nécessaire)
+# geopy>=2.3.0
+
+# Test et développement
+pytest>=7.0.0
+pytest-benchmark>=4.0.0 
